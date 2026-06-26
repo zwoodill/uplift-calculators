@@ -208,8 +208,8 @@ body {
           </select>
         </div>
       </div>
-      <div class="layer-ctrl">
-        <input type="range" id="sld-sheath" min="0" max="1.5" step="0.0625" value="0.5" oninput="setSheath(this.value)" style="accent-color:#8A7F72">
+      <div class="layer-ctrl" style="flex-wrap:wrap;gap:5px;">
+        <div id="sheath-btns" style="display:flex;gap:5px;flex-wrap:wrap;"></div>
         <span class="layer-val" id="val-sheath"></span>
       </div>
     </div>
@@ -394,7 +394,30 @@ function setHTML(id, html){ const e = document.getElementById(id); if (e) e.inne
 
 // ---- input handlers ----
 function setBumper(v){ bumperT = parseFloat(v); document.getElementById('val-bumper').textContent = readout(bumperT); recalc(); }
-function setSheath(v){ sheathT = parseFloat(v); document.getElementById('val-sheath').textContent = readout(sheathT); recalc(); }
+// Standard plywood thicknesses (nominal, inches) — Home Depot range
+const SHEATH_SIZES = [
+  {label:'1/8"', v:0.125}, {label:'1/4"', v:0.25}, {label:'3/8"', v:0.375},
+  {label:'7/16"', v:0.4375}, {label:'1/2"', v:0.5}, {label:'5/8"', v:0.625},
+  {label:'3/4"', v:0.75}, {label:'1-1/8"', v:1.125}
+];
+function buildSheathBtns(){
+  const c = document.getElementById('sheath-btns'); if (!c) return;
+  c.innerHTML = SHEATH_SIZES.map(s =>
+    `<button class="sel" id="sb${s.v}" onclick="setSheath(${s.v})">${s.label}</button>`
+  ).join('');
+  styleSheathBtns();
+}
+function styleSheathBtns(){
+  SHEATH_SIZES.forEach(s => {
+    const b = document.getElementById('sb'+s.v); if (!b) return;
+    const on = Math.abs(s.v - sheathT) < 0.001;
+    b.style.background = on ? '#EDE9E5' : '';
+    b.style.color = on ? '#3D3830' : 'var(--color-text-secondary)';
+    b.style.borderColor = on ? '#8A7F72' : 'var(--color-border-secondary)';
+    b.style.fontWeight = on ? '600' : '400';
+  });
+}
+function setSheath(v){ sheathT = parseFloat(v); styleSheathBtns(); buildSheathBtns(); recalc(); }
 function setGap(v){ gapT = parseFloat(v); document.getElementById('val-gap').textContent = readout(gapT); recalc(); }
 function setXps(v){ xpsT = parseFloat(v); document.getElementById('val-xps').textContent = readout(xpsT); recalc(); }
 function setPanel(v){ panelT = parseFloat(v); document.getElementById('val-panel').textContent = readout(panelT); recalc(); }
@@ -402,7 +425,7 @@ function setPanel(v){ panelT = parseFloat(v); document.getElementById('val-panel
 function setSheathType(v){
   sheathType = v;
   const d = SHEATH_DEFAULTS[v];
-  if (d !== null) { sheathT = d; document.getElementById('sld-sheath').value = d; document.getElementById('val-sheath').textContent = readout(d); }
+  if (d !== null) { setSheath(d); }
   recalc();
 }
 function setPanelType(v){
