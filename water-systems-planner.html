@@ -485,6 +485,19 @@ svg{display:block;max-width:100%;height:auto;}
     </div>
   </section>
 
+  <!-- ================= DIAGRAM (live dependency graph) ================= -->
+  <section class="tabpane" data-pane="diagram">
+    <div class="info-bar">
+      Live dependency graph — every value is recomputed on each input change, same as the rest of the planner.
+      Vertical arrows = calculation order within a subsystem; <b style="color:#a35b00;">orange arrows</b> = data hand-offs between subsystems.
+      <span style="color:var(--color-text-danger);font-weight:600;">Red boxes</span> = flags currently firing.
+    </div>
+    <div class="card" style="overflow-x:auto;">
+      <div class="section-title"><i class="ti ti-sitemap"></i>Calculation flow <span style="font-size:11px;font-weight:400;color:var(--color-text-secondary);">(values update live)</span></div>
+      <div id="dep-svg" style="min-width:900px;"></div>
+    </div>
+  </section>
+
   <p class="footnote">Part of the Uplift micro-home planning tools. Self-contained; inputs auto-save in this browser (use <b>Reset to defaults</b> to clear). Deploy: <code>uplift-calculators</code> → GitHub Pages → Confluence iframe.</p>
 
 </div>
@@ -545,6 +558,7 @@ const TABS = [
   {id:'hot',     label:'Hot Water',icon:'flame'},
   {id:'toilet',  label:'Toilet',  icon:'recycle'},
   {id:'power',   label:'Power',   icon:'bolt'},
+  {id:'diagram', label:'Diagram', icon:'sitemap'},
 ];
 
 const HWTABS = [
@@ -921,7 +935,7 @@ function recalc(){
   const reqPsi=reqHead/PSI2FT;               // dynamic pressure to serve peak fixture at peak flow
   const residualPsi=S.fixtureHeadFt/PSI2FT;  // designed residual at fixture
   const pressureOK=reqPsi<=S.maxSysPsi;
-  Object.assign(R,{pumpWhDay,pumpAmps,canMeetPeak,reqHead,dutyFlow,provideHead,pumpElecW,hydraulicW,reqPsi,residualPsi,pressureOK});
+  Object.assign(R,{pumpWhDay,pumpAmps,canMeetPeak,reqHead,dutyFlow,provideHead,pumpElecW,hydraulicW,reqPsi,residualPsi,pressureOK,opQ:op.q,opH:op.h,pumpRuntimeMin});
 
   // requirement (driven by usage)
   setHTML('out-duty',
@@ -1007,6 +1021,9 @@ function recalc(){
   buildGpmBtns(); buildTempBtns(); buildShapeBtns();
   renderHwSizing(); renderHwHeater(); renderHwInsulation(); renderHwTradeoff(); renderHwWall();
   renderShowerHeadTable();
+
+  // ---------- LIVE DEPENDENCY DIAGRAM ----------
+  renderDiagram();
 
   // ---------- SUMMARY (rollup) ----------
   setHTML('out-summary',
@@ -1281,6 +1298,100 @@ function renderHwWall(){
     return `<tr style="background:${sel?'#E6F1FB':'transparent'};"><td style="font-weight:${sel?'500':'400'};color:${sel?'#185FA5':'var(--color-text-primary)'};">${gg.name}${sel?' <span style="background:#E6F1FB;color:#185FA5;font-size:10px;font-weight:500;padding:1px 6px;border-radius:4px;">selected</span>':''}</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);font-size:12px;">${gg.bare}</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);">${AREA(gg.sa/144,2)}</td><td style="font-family:var(--font-mono);color:#A32D2D;">${w.toFixed(1)} W</td><td style="font-family:var(--font-mono);color:#0F6E56;">${VOL(e,1)}</td></tr>`;
   }).join(''));
   setHTML('wall-rec',`Treat foam as expensive packaging and water as free payload. Insulation past <b>~${LEN(3,0)} (R-${(S.insulRperIn*3).toFixed(0)})</b> is almost pure bulk — single-digit watts of return for a lot of box. If space is tight, a bigger tank with thinner foam can be a smaller overall package than a small tank with thick foam, holds more water, and costs only a few more watts. Choose the <b>${g.name.toLowerCase()}</b> only if it fits your cavity; the cylinder is the thermal/volume optimum, the slab is the fit-a-flat-space option. Insulate the plumbing stubs too — a bare fitting can leak as much as a sizeable patch of tank wall.`);
+}
+
+// ============================================================================
+// LIVE DEPENDENCY DIAGRAM — SVG rendered from S/R on every recalc().
+// 5 subsystem lanes; vertical arrows = calc order in lane; orange = hand-offs.
+// ============================================================================
+function renderDiagram(){
+  const host=el('dep-svg'); if(!host) return;
+  const LW=300, GAP=18, NX=14, NW=LW-2*NX, LT=26;
+  const W=5*LW+4*GAP, H=440;
+  const lanes=['1 · WATER DEMAND','2 · HOT WATER','3 · PUMP','4 · POWER + BATTERY','5 · TOILET'];
+  const laneH=[430,430,430,430,220];
+  const lx=i=>i*(LW+GAP);
+  const nodes={}; let body='';
+  function node(id,lane,y,h,lines,type){
+    const x=lx(lane)+NX; nodes[id]={x,y,w:NW,h};
+    const fill={in:'var(--color-background-info)',calc:'var(--color-background-primary)',key:'var(--color-background-success)',flag:'var(--color-background-danger)'}[type];
+    const strk={in:'#6c8ebf',calc:'var(--color-border-secondary)',key:'#82b366',flag:'#b85450'}[type];
+    const tcol={in:'var(--color-text-info)',calc:'var(--color-text-primary)',key:'var(--color-text-success)',flag:'var(--color-text-danger)'}[type];
+    let t='';
+    const y0=y+h/2-(lines.length-1)*6.5;
+    lines.forEach((ln,i)=>{t+=`<tspan x="${x+NW/2}" y="${y0+i*13}">${ln}</tspan>`;});
+    body+=`<rect x="${x}" y="${y}" width="${NW}" height="${h}" rx="7" fill="${fill}" stroke="${strk}" stroke-width="1"/>`+
+      `<text text-anchor="middle" font-size="10.5" font-family="var(--font-mono)" fill="${tcol}" dominant-baseline="middle">${t}</text>`;
+  }
+  function vEdge(a,b){
+    const A=nodes[a],B=nodes[b],x=A.x+A.w/2;
+    body+=`<path d="M${x} ${A.y+A.h} L${x} ${B.y-5}" fill="none" stroke="var(--color-border-primary)" stroke-width="1" marker-end="url(#dgArr)"/>`;
+  }
+  function xEdge(a,b,label,yLab){
+    const A=nodes[a],B=nodes[b];
+    const y1=A.y+A.h/2, y2=B.y+B.h/2, x1=A.x+A.w, x2=B.x;
+    const xm=x2-GAP/2-4;
+    body+=`<path d="M${x1} ${y1} L${xm} ${y1} L${xm} ${y2} L${x2-5} ${y2}" fill="none" stroke="#d79b00" stroke-width="1.75" opacity="0.8" marker-end="url(#dgArrO)"/>`;
+    if(label)body+=`<text x="${(x1+xm)/2}" y="${y1-(yLab||5)}" text-anchor="middle" font-size="9.5" font-weight="600" fill="#a35b00">${label}</text>`;
+  }
+  lanes.forEach((t,i)=>{
+    body+=`<rect x="${lx(i)}" y="4" width="${LW}" height="${laneH[i]}" rx="10" fill="var(--color-background-secondary)" stroke="var(--color-border-tertiary)"/>`+
+      `<text x="${lx(i)+12}" y="${LT-4}" font-size="11.5" font-weight="600" fill="var(--color-text-secondary)">${t}</text>`;
+  });
+  const occStr=`${S.adults}a/${S.children}c/${S.guests}g`;
+  // lane 1: demand
+  node('d_in',0,36,54,[`IN: occ ${occStr} · cf ${S.childFactor}%`,`${fixtures.length} fixtures · ${S.waterDays}/${S.powerDays} d`,`reserve ${S.reservePct}%`],'in');
+  node('d_occ',0,108,28,[`occEq = ${f(R.occEq,1)} water-equiv`],'calc');
+  node('d_fr',0,154,28,[`totalFresh = ${VOL(R.totalFresh,1)}/d`],'key');
+  node('d_hd',0,200,28,[`hotDaily = ${VOL(R.hotDaily,1)}/d`],'calc');
+  node('d_pk',0,246,40,[`peakFlow = ${FLOW(R.peakFlow,2)}`,`(2 largest indoor fixtures)`],'calc');
+  node('d_tk',0,304,40,[`fresh ${VOL(R.freshTank,0)}`,`grey ${VOL(R.greyTank,0)}`],'key');
+  vEdge('d_in','d_occ');vEdge('d_occ','d_fr');vEdge('d_fr','d_hd');vEdge('d_hd','d_pk');vEdge('d_pk','d_tk');
+  // lane 2: hot water
+  node('h_in',1,36,54,[`IN: ${T(S.inletF)}→${T(S.setpointF)} · ${VOL(S.tankGal,0)}`,`${S.elementW} W · R-${f(R.Rval,0)}`,`mix ${T(S.showerMixF)} · FoI ${f(S.foI,1)}`],'in');
+  node('h_hf',1,108,40,[`hotFrac ${f(R.hotFrac*100,0)}%`,`hotNeed ${VOL(R.hotNeed,1)}/session`],'calc');
+  node('h_he',1,166,28,[`heatEnergy = ${f(R.heatEnergyWh,0)} Wh/d`],'key');
+  node('h_sb',1,212,28,[`standby ${f(R.standbyW,1)} W → ${f(R.standbyWhDay,0)} Wh/d`],'calc');
+  node('h_am',1,258,28,[`elementAmps = ${f(R.elementAmps,1)} A`],'calc');
+  vEdge('h_in','h_hf');vEdge('h_hf','h_he');vEdge('h_he','h_sb');vEdge('h_sb','h_am');
+  // lane 3: pump
+  const pOK=R.canMeetPeak, prOK=R.pressureOK;
+  node('p_in',2,36,54,[`IN: lift ${HEAD(S.staticLiftFt,0)} · fix ${HEAD(S.fixtureHeadFt,0)}`,`K ${f(S.frictionK,1)} · eff ${S.pumpEffPct}%`,`max ${S.maxSysPsi} psi · curve`],'in');
+  node('p_rh',2,108,40,[`reqHead ${HEAD(R.reqHead,0)} (${f(R.reqPsi,1)} psi)`,`${prOK?'≤':'EXCEEDS'} ${S.maxSysPsi} psi ${prOK?'✓':'✗'}`],prOK?'calc':'flag');
+  node('p_hy',2,166,28,[`hydraulic = ${f(R.hydraulicW,0)} W`],'calc');
+  node('p_el',2,212,28,[`pumpElec ${f(R.pumpElecW,0)} W · ${f(R.pumpAmps,1)} A`],'key');
+  node('p_op',2,258,40,[`op pt ${FLOW(R.opQ,2)} @ ${HEAD(R.opH,0)}`,`${f(R.pumpRuntimeMin,0)} min/d → ${f(R.pumpWhDay,0)} Wh/d`],'calc');
+  node('p_fl',2,316,40, pOK?[`curve ${HEAD(R.provideHead,0)} ≥ duty ✓`,`pump meets peak`]:[`curve ${HEAD(R.provideHead,0)} < ${HEAD(R.reqHead,0)} ✗`,`FLAG: pump undersized`], pOK?'key':'flag');
+  vEdge('p_in','p_rh');vEdge('p_rh','p_hy');vEdge('p_hy','p_el');vEdge('p_el','p_op');vEdge('p_op','p_fl');
+  // lane 4: power
+  const bOK=R.waterWhDay<=S.budgetWh, dOK=R.meetsDays;
+  node('w_in',3,36,54,[`IN: ${S.busVoltage} V · budget ${f(S.budgetWh,0)} Wh`,`other ${f(S.otherLoadsWh,0)} Wh · fan ${f(R.fanWhDay,0)} Wh`,`${S.battModules}× V5° · DoD ${S.batteryDoDPct}% · eff ${S.systemEffPct}%`],'in');
+  node('w_ww',3,108,40,[`waterWh = ${f(R.waterWhDay,0)} Wh/d`,`${f(R.balancePct,0)}% of budget ${bOK?'✓':'✗ OVER'}`],bOK?'key':'flag');
+  node('w_tl',3,166,28,[`totalLoad = ${f(R.totalLoadWh,0)} Wh/d`],'calc');
+  node('w_us',3,212,28,[`usable = ${f(R.usableWh/1000,2)} kWh`],'calc');
+  node('w_da',3,258,40,[`autonomy ${f(R.daysAchieved,1)} d vs ${f(S.powerDays,1)} d`,dOK?`meets target ✓`:`FLAG: need ${R.reqModules} modules`],dOK?'key':'flag');
+  node('w_pa',3,316,28,[`peakAmps = ${f(R.peakAmps,1)} A DC`],'calc');
+  vEdge('w_in','w_ww');vEdge('w_ww','w_tl');vEdge('w_tl','w_us');vEdge('w_us','w_da');vEdge('w_da','w_pa');
+  // lane 5: toilet
+  node('t_in',4,36,42,[`IN: ${VOLL(S.urineLppd,1)}/p·d`,`empty ${S.toiletEmptyDays} d · ${S.toiletMode==='urine-sep'?'urine-sep':'leachate '+S.leachateFrac+'%'}`],'in');
+  node('t_lq',4,96,28,[`liquid = ${VOL(R.liquidGalDay,2)}/d`],'calc');
+  node('t_ct',4,142,28,[`container = ${VOL(R.containerGal,1)}`],'key');
+  vEdge('t_in','t_lq');vEdge('t_lq','t_ct');
+  // cross-lane hand-offs (orange)
+  xEdge('d_hd','h_he','hot gal/d');
+  xEdge('d_pk','p_rh','peak flow',8);
+  xEdge('d_fr','p_op','gal/d → runtime',18);
+  xEdge('h_he','w_ww','heat Wh');
+  xEdge('h_sb','w_ww','standby Wh',16);
+  xEdge('p_op','w_tl','pump Wh');
+  xEdge('h_am','w_pa','heater A',16);
+  xEdge('p_el','w_pa','pump A');
+  xEdge('d_occ','t_lq','occEq');
+  const defs=`<defs>
+    <marker id="dgArr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7 Z" fill="var(--color-border-primary)"/></marker>
+    <marker id="dgArrO" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7 Z" fill="#d79b00"/></marker>
+  </defs>`;
+  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Live calculation dependency graph" style="width:100%;min-width:900px;">${defs}${body}</svg>`;
 }
 
 // ---- HUD 24 CFR Part 3280 Subpart G compliance panel ----
