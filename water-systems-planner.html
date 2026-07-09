@@ -571,7 +571,8 @@ let showerHeads = [
   {name:'Standard',  gpm:2.0},
 ];
 
-let pumpCurve = [ {q:0,h:70},{q:1,h:62},{q:2,h:50},{q:3,h:34},{q:4,h:14} ];
+// representative 48V DC booster: ~55 psi (127 ft) shutoff, ~40 psi (92 ft) at 3 GPM — placeholder until a real pump is chosen
+let pumpCurve = [ {q:0,h:127},{q:1,h:118},{q:2,h:106},{q:3,h:92},{q:4,h:60},{q:5,h:20} ];
 
 let activeTab = 'summary';
 let hwTab = 0;   // hot-water sub-tab index
@@ -1336,7 +1337,7 @@ function renderHwWall(){
 function renderDiagram(){
   const host=el('dep-svg'); if(!host) return;
   const LW=300, GAP=18, NX=14, NW=LW-2*NX, LT=26;
-  const W=5*LW+4*GAP, H=500, CH0=442;
+  const W=5*LW+4*GAP, H=545, CH0=442;
   const lanes=['1 · WATER DEMAND','2 · HOT WATER','3 · PUMP','4 · POWER + BATTERY','5 · TOILET'];
   const laneH=[430,430,430,430,220];
   const lx=i=>i*(LW+GAP);
@@ -1366,9 +1367,11 @@ function renderDiagram(){
       if(label)body+=`<text x="${(x1+xm)/2}" y="${y1-(yLab||5)}" text-anchor="middle" font-size="9.5" font-weight="600" fill="#a35b00">${label}</text>`;
     } else {
       // spanning >1 lane: drop into a channel BELOW the lanes so nothing crosses a box
-      const chY=CH0+busI*7; busI++;
-      const gS=lx(A.lane)+LW+GAP/2;   // gap just right of source lane
-      const gT=lx(B.lane)-GAP/2;      // gap just left of target lane
+      const i=busI++;
+      const chY=CH0+i*13;              // wider channel rows so horizontals don't collide
+      const dx=((i%3)-1)*5;            // fan the vertical corridors within the gaps
+      const gS=lx(A.lane)+LW+GAP/2+dx; // gap just right of source lane
+      const gT=lx(B.lane)-GAP/2+dx;    // gap just left of target lane
       body+=`<path d="M${x1} ${y1} L${gS} ${y1} L${gS} ${chY} L${gT} ${chY} L${gT} ${y2} L${x2-5} ${y2}" fill="none" stroke="#d79b00" stroke-width="1.5" opacity="0.85" marker-end="url(#dgArrO)"/>`;
       if(label)body+=`<text x="${(gS+gT)/2}" y="${chY-3}" text-anchor="middle" font-size="9.5" font-weight="600" fill="#a35b00">${label}</text>`;
     }
