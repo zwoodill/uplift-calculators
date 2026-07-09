@@ -200,7 +200,8 @@ svg{display:block;max-width:100%;height:auto;}
   <div id="pw-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;align-items:center;justify-content:center;padding:1rem;">
     <div class="card" style="max-width:340px;width:100%;margin:0;">
       <div class="section-title"><i class="ti ti-lock"></i>Set current values as defaults</div>
-      <p style="font-size:12.5px;color:var(--color-text-secondary);margin:0 0 10px;line-height:1.6;">Enter the admin password to make the current inputs the new default baseline. Applies to <b>Reset to defaults</b> and to first-time users in this browser.</p>
+      <p style="font-size:12.5px;color:var(--color-text-secondary);margin:0 0 10px;line-height:1.6;">Enter the admin password to make the current inputs the new default baseline — what <b>Reset to defaults</b> returns to, and what a first-time visitor starts from.</p>
+      <div class="notice-amber" style="margin:0 0 10px;"><i class="ti ti-alert-triangle"></i> <b>Saved to this browser only.</b> It is <b>not</b> published to teammates, other devices, or fielded units — each browser keeps its own copy. To set a product-wide default for everyone, the values must be baked into the source code and deployed.</div>
       <input type="password" id="pw-input" placeholder="Password" onkeyup="if(event.key==='Enter')confirmSetDefault()"
         style="width:100%;padding:7px 10px;border-radius:6px;border:.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-mono);">
       <div id="pw-msg" style="font-size:11.5px;color:var(--color-text-danger);min-height:15px;margin:6px 0 8px;"></div>
