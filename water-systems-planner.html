@@ -509,8 +509,8 @@ const S = {
   // power / battery — default pack: 2× Pytes V5° (LFP, 51.2 V nom, 47.5–57.6 V, 100 Ah / 5.12 kWh each → 200 Ah / 10.24 kWh, 90% DoD, ~95% RT)
   budgetWh:4500, otherLoadsWh:1500,
   batteryDoDPct:90, systemEffPct:95, battModKwh:5.12, battModAh:100, battNomV:51.2, battModules:2,
-  // composting toilet
-  toiletMode:'urine-sep', urineLppd:1.4, toiletEmptyDays:7, leachateFrac:35,
+  // composting toilet — urine separation to a tank is the default; 24/7 DC vent fan
+  toiletMode:'urine-sep', urineLppd:1.4, toiletEmptyDays:7, leachateFrac:35, toiletFanW:3,
 };
 
 // fixtures: gpm=flowrate, min=effective water-on min/day, pctHot=% from hot tank,
@@ -603,6 +603,7 @@ const FIELDS = {
     ['urineLppd','Urine per person','L/day',0.1,'Urine produced per person per day (roughly 1–1.5 L is typical). Drives container / leachate tank sizing.','volL'],
     ['toiletEmptyDays','Days between empties','days',1,'How often you empty the urine container or leachate tank. Longer intervals need a larger container.'],
     ['leachateFrac','Leachate fraction','%',5,'Leachate mode only: the share of urine that drains off as liquid; the rest is absorbed or evaporated in the compost.'],
+    ['toiletFanW','Vent fan power','W',0.5,'Composting toilet runs a continuous 24/7 DC extraction fan for odour + evaporation. Small but always-on — it feeds the battery/DC balance.'],
   ],
 };
 
@@ -883,12 +884,14 @@ function recalc(){
   const liquidGalDay=sep?urineGalDay:urineGalDay*(S.leachateFrac/100);
   const containerGal=liquidGalDay*S.toiletEmptyDays;
   const containerLabel=sep?'Urine container':'Leachate tank';
-  Object.assign(R,{liquidGalDay,containerGal});
+  const fanWhDay=S.toiletFanW*24;   // 24/7 DC vent fan
+  Object.assign(R,{liquidGalDay,containerGal,fanWhDay});
   setHTML('out-toilet',
     mcard('Liquid produced',uVu()+'/day',f(uV(liquidGalDay),2),`${f(R.occEq,1)} occ × ${VOLL(S.urineLppd,1)}`) +
     mcard(containerLabel,uVu(),f(uV(containerGal),1),`${S.toiletEmptyDays}d between empties`) +
     mcard('Empties','/month',f(30/S.toiletEmptyDays,1)) +
-    mcard('Flush water',uVu()+'/day','0',`composting — none`)
+    mcard('Flush water',uVu()+'/day','0',`composting — none`) +
+    mcard('Vent fan','Wh/day',f(fanWhDay,0),`${f(S.toiletFanW,1)} W · 24/7 → DC balance`)
   );
   setHTML('note-toilet',
     `<div class="notice-title"><i class="ti ti-info-circle"></i>${sep?'Urine separation':'Leachate tank'}</div>`+
@@ -971,7 +974,7 @@ function recalc(){
   ['note-power','note-power2'].forEach(id=>{const n=el(id);if(n){n.className=balanceClass;n.innerHTML=balanceHTML;}});
 
   // ---------- BATTERY PACK (defined pack → autonomy is the output) ----------
-  const totalLoadWh=waterWhDay+S.otherLoadsWh;
+  const totalLoadWh=waterWhDay+S.otherLoadsWh+fanWhDay;   // water system + other house loads + composting-toilet vent fan
   const modWh=S.battModKwh*1000;
   const installedWh=S.battModules*modWh;                       // nominal pack energy
   const installedAh=S.battModules*S.battModAh;                 // parallel Ah
@@ -982,7 +985,7 @@ function recalc(){
   const meetsDays=daysAchieved>=S.powerDays;
   Object.assign(R,{totalLoadWh,installedWh,installedAh,usableWh,daysAchieved,reqModules,meetsDays,modules:S.battModules});
   setHTML('out-battery',
-    mcard('Total daily load','Wh/day',f(totalLoadWh,0),`water ${f(waterWhDay,0)} + other ${f(S.otherLoadsWh,0)}`) +
+    mcard('Total daily load','Wh/day',f(totalLoadWh,0),`water ${f(waterWhDay,0)} + other ${f(S.otherLoadsWh,0)} + fan ${f(fanWhDay,0)}`) +
     mcard('Installed pack','kWh',f(installedWh/1000,2),`${S.battModules}× V5° · ${f(installedAh,0)} Ah`) +
     mcard('Autonomy','days',f(daysAchieved,1),`target ${f(S.powerDays,1)} d (power)`) +
     mcard('Modules for target','×',reqModules,meetsDays?`✓ ${S.battModules} installed`:`✗ need ${reqModules}, have ${S.battModules}`) +
