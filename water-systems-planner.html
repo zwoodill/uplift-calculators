@@ -165,6 +165,10 @@ table.tbl input[type=text]{font-family:var(--font-sans);font-size:12.5px;width:1
 }
 .chart-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--color-text-secondary);}
 .chart-legend .sw{display:inline-block;width:11px;height:11px;vertical-align:middle;margin-right:5px;border-radius:2px;}
+.comp-row{display:flex;gap:9px;align-items:flex-start;font-size:12.5px;padding:7px 0;border-bottom:.5px solid var(--color-border-tertiary);line-height:1.55;}
+.comp-row:last-child{border-bottom:none;}
+.comp-row .ti{margin-top:2px;flex-shrink:0;font-size:15px;}
+.cite{font-size:10px;color:var(--color-text-tertiary);font-family:var(--font-mono);white-space:nowrap;}
 .stage-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-info);font-weight:600;margin:14px 0 6px;}
 .stage-label span{color:var(--color-text-tertiary);font-weight:400;text-transform:none;letter-spacing:0;}
 .hwnote{font-size:12px;color:var(--color-text-secondary);margin-top:10px;line-height:1.6;}
@@ -472,6 +476,11 @@ svg{display:block;max-width:100%;height:auto;}
       <div class="metric-grid" id="out-pump"></div>
     </div>
     <div class="notice teal" id="note-pump"></div>
+    <div class="card">
+      <div class="section-title"><i class="ti ti-clipboard-check"></i>HUD compliance — 24 CFR Part 3280, Subpart G</div>
+      <div class="info-bar">Hard constraints from HUD Subpart G, maintained on David's <a href="https://requirements.uplift.us/" target="_blank" rel="noopener">requirements page</a>. Off-grid, the pump + accumulator replaces the PRV; 80 psi is the design ceiling.</div>
+      <div id="out-compliance"></div>
+    </div>
   </section>
 
   <p class="footnote">Part of the Uplift micro-home planning tools. Self-contained; inputs auto-save in this browser (use <b>Reset to defaults</b> to clear). Deploy: <code>uplift-calculators</code> → GitHub Pages → Confluence iframe.</p>
@@ -494,7 +503,7 @@ const S = {
   insulRperIn:6.5, insulIn:3, ambientF:68,
   showerMixF:105, foI:1.5, tankShape:'cyl',
   // pump — duty derived from usage; electrical power derived from duty + efficiency
-  staticLiftFt:8, fixtureHeadFt:46, frictionK:2.5, pumpEffPct:40,
+  staticLiftFt:8, fixtureHeadFt:46, frictionK:2.5, pumpEffPct:40, maxSysPsi:80,
   // power / battery — default pack: 2× Pytes V5° (LFP, 51.2 V nom, 47.5–57.6 V, 100 Ah / 5.12 kWh each → 200 Ah / 10.24 kWh, 90% DoD, ~95% RT)
   budgetWh:4500, otherLoadsWh:1500,
   batteryDoDPct:90, systemEffPct:95, battModKwh:5.12, battModAh:100, battNomV:51.2, battModules:2,
@@ -573,6 +582,7 @@ const FIELDS = {
     ['fixtureHeadFt','Fixture pressure (head)','ft',1,'Residual pressure you want at the fixture, expressed as head. ~46 ft ≈ 20 psi ≈ 1.4 bar for a comfortable shower. Added to lift + friction to set the duty head.','head'],
     ['frictionK','Friction coeff K','ft/GPM²',0.1,'Plumbing resistance. Head lost to friction rises with flow squared (K x flow²). Higher for long or narrow pipe runs.'],
     ['pumpEffPct','Pump efficiency','%',5,'Combined pump + motor (wire-to-water) efficiency. Small DC booster/diaphragm pumps run ~30–45%. Electrical draw = hydraulic power ÷ this.'],
+    ['maxSysPsi','Max system pressure','psi',5,'HUD ceiling (§3280.609). Off-grid, the pump/accumulator cut-out setpoint is the functional PRV — it must never deliver more than this at any fixture. Keep ≤ 80 psi.'],
   ],
   'grp-loads':[
     ['budgetWh','Water-system energy budget','Wh/day',100,'Daily energy you are willing to allot to the water system (heating + pumping). The balance check flags if you exceed it.'],
@@ -897,7 +907,12 @@ function recalc(){
   const pumpRuntimeMin=totalFresh/deliveredFlow;
   const pumpWhDay=pumpElecW*(pumpRuntimeMin/60);
   const pumpAmps=pumpElecW/S.busVoltage;
-  Object.assign(R,{pumpWhDay,pumpAmps,canMeetPeak,reqHead,dutyFlow,provideHead,pumpElecW,hydraulicW});
+  // HUD pressure checks (§3280.609): 80 psi ceiling; residual is a design/mfr input (no code floor)
+  const PSI2FT=2.3067;
+  const reqPsi=reqHead/PSI2FT;               // dynamic pressure to serve peak fixture at peak flow
+  const residualPsi=S.fixtureHeadFt/PSI2FT;  // designed residual at fixture
+  const pressureOK=reqPsi<=S.maxSysPsi;
+  Object.assign(R,{pumpWhDay,pumpAmps,canMeetPeak,reqHead,dutyFlow,provideHead,pumpElecW,hydraulicW,reqPsi,residualPsi,pressureOK});
 
   // requirement (driven by usage)
   setHTML('out-duty',
@@ -924,6 +939,7 @@ function recalc(){
       `<b>Pump drives power:</b> that duty needs ${f(hydraulicW,0)} W hydraulic ÷ ${S.pumpEffPct}% = <b>${f(pumpElecW,0)} W</b> electrical (${f(pumpAmps,1)} A), and ~${f(pumpRuntimeMin,0)} min/day of running ⇒ <b>${f(pumpWhDay,0)} Wh/day</b> into the DC balance above.`;
   }
   renderPumpChart(op);
+  renderCompliance();
 
   // ---------- POWER BALANCE ----------
   const waterWhDay=heatEnergyWh+standbyWhDay+pumpWhDay;
@@ -1257,6 +1273,25 @@ function renderHwWall(){
   setHTML('wall-rec',`Treat foam as expensive packaging and water as free payload. Insulation past <b>~${LEN(3,0)} (R-${(S.insulRperIn*3).toFixed(0)})</b> is almost pure bulk — single-digit watts of return for a lot of box. If space is tight, a bigger tank with thinner foam can be a smaller overall package than a small tank with thick foam, holds more water, and costs only a few more watts. Choose the <b>${g.name.toLowerCase()}</b> only if it fits your cavity; the cylinder is the thermal/volume optimum, the slab is the fit-a-flat-space option. Insulate the plumbing stubs too — a bare fitting can leak as much as a sizeable patch of tank wall.`);
 }
 
+// ---- HUD 24 CFR Part 3280 Subpart G compliance panel ----
+function renderCompliance(){
+  const capFix=fixtures.filter(fx=>fx.grey && fx.gpm>2.5);   // §607 supplied fixtures over 2.5 gpm
+  const stt=s=>s==='ok'?'<i class="ti ti-circle-check" style="color:var(--color-text-success)"></i>'
+    :s==='warn'?'<i class="ti ti-alert-triangle" style="color:var(--color-text-warning)"></i>'
+    :'<i class="ti ti-info-circle" style="color:var(--color-text-info)"></i>';
+  const rows=[
+    [R.pressureOK?'ok':'warn',`<b>Max system pressure ≤ ${f(S.maxSysPsi,0)} psi.</b> Peak duty ≈ <b>${f(R.reqPsi,0)} psi</b>; set the pump cut-out / accumulator ≤ ${f(S.maxSysPsi,0)} psi — the functional PRV.`,'§3280.609'],
+    ['info',`<b>Min residual pressure.</b> Not set by code — a design/mfr choice. Currently <b>${f(R.residualPsi,0)} psi</b> (${HEAD(S.fixtureHeadFt,0)}) at the peak fixture.`,'§3280.609'],
+    [capFix.length?'warn':'ok',`<b>Fixture flow ≤ 2.5 gpm.</b> ${capFix.length?('Over limit: '+capFix.map(fx=>`${fx.name} ${f(fx.gpm,2)} gpm`).join(', ')):'All supplied fixtures within limit.'}`,'§3280.607'],
+    ['info',`<b>Toilet ≤ 1.6 gal/flush.</b> Composting toilet — no flush water; N/A.`,'§3280.603'],
+    ['ok',`<b>¾″ threaded inlet.</b> Peak demand ${FLOW(R.dutyFlow,2)} is within ¾″ capacity at ≤ ${f(S.maxSysPsi,0)} psi.`,'§3280.609'],
+    [S.setpointF<210?'ok':'warn',`<b>Hot-water T&amp;P relief ≤ 150 psi / ≤ 210 °F.</b> Setpoint ${T(S.setpointF)} and design pressure ≤ ${f(S.maxSysPsi,0)} psi are both under the relief limits; account for thermal expansion in the accumulator/relief.`,'§3280.609'],
+    ['info',`<b>Pressure test: 80 ±5 psi for 15 min, zero loss.</b> The accumulator + pump control must hold static pressure without decay.`,'§3280.612'],
+    ['info',`<b>Demand / simultaneity method.</b> The reg gives no WSFU table; this tool takes peak = the two largest indoor fixtures running together. Confirm the method.`,'§3280.609'],
+  ];
+  setHTML('out-compliance', rows.map(r=>`<div class="comp-row">${stt(r[0])}<span>${r[1]} <span class="cite">${r[2]}</span></span></div>`).join(''));
+}
+
 // ---- persistence: auto-save inputs to this browser, restore on load ----
 // Scoped per origin: the Confluence/GitHub-Pages version persists across reloads
 // there; the local file:// copy keeps its own separate memory.
@@ -1325,7 +1360,7 @@ function setAsDefault(){const o=el('pw-overlay');if(o){el('pw-input').value='';e
 function closePwModal(){const o=el('pw-overlay');if(o)o.style.display='none';}
 function confirmSetDefault(){
   const v=(el('pw-input')||{}).value;
-  if(v!=='1766'){const m=el('pw-msg');if(m)m.textContent='Incorrect password.';return;}
+  if(v!=='1776'){const m=el('pw-msg');if(m)m.textContent='Incorrect password.';return;}
   const snap={S:JSON.parse(JSON.stringify(S)),fixtures:JSON.parse(JSON.stringify(fixtures)),showerHeads:JSON.parse(JSON.stringify(showerHeads)),pumpCurve:JSON.parse(JSON.stringify(pumpCurve)),unitSys};
   try{localStorage.setItem(DEFAULTS_KEY,JSON.stringify(snap));}catch(e){}
   Object.assign(DEFAULTS.S,snap.S);DEFAULTS.fixtures=snap.fixtures;DEFAULTS.showerHeads=snap.showerHeads;DEFAULTS.pumpCurve=snap.pumpCurve;DEFAULTS.unitSys=snap.unitSys;
