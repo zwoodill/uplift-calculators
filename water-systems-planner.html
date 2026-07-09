@@ -117,6 +117,9 @@ table.tbl input[type=text]{font-family:var(--font-sans);font-size:12.5px;width:1
 .pumprow input{font-family:var(--font-mono);font-size:13px;padding:5px 8px;border-radius:6px;
   border:.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);width:100%;}
 .footnote{font-size:11px;color:var(--color-text-tertiary);margin-top:6px;}
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+.save-status{font-size:11.5px;color:var(--color-text-tertiary);display:flex;align-items:center;gap:5px;}
+.save-status .ti{font-size:14px;}
 svg{display:block;max-width:100%;height:auto;}
 </style>
 </head>
@@ -126,6 +129,11 @@ svg{display:block;max-width:100%;height:auto;}
   <h1>Micro-Home Water Systems Planner</h1>
   <p class="subtitle">Fixture-driven water demand, hot-water capacity, grey drainage, and off-grid DC power balance.</p>
   <span class="part-chip">Water Systems · Off-grid</span>
+
+  <div class="toolbar">
+    <span class="save-status" id="save-status"></span>
+    <button class="btn" onclick="resetDefaults()"><i class="ti ti-rotate"></i> Reset to defaults</button>
+  </div>
 
   <div class="meta-bar" id="meta-bar"></div>
 
@@ -192,7 +200,7 @@ svg{display:block;max-width:100%;height:auto;}
   </div>
   <div class="notice" id="note-power"></div>
 
-  <p class="footnote">Part of the Uplift micro-home planning tools. Self-contained; values reset on reload. Deploy target: <code>uplift-calculators</code> → GitHub Pages → Confluence iframe.</p>
+  <p class="footnote">Part of the Uplift micro-home planning tools. Self-contained; inputs auto-save in this browser (use <b>Reset to defaults</b> to clear). Deploy target: <code>uplift-calculators</code> → GitHub Pages → Confluence iframe.</p>
 
 </div>
 
@@ -451,6 +459,8 @@ function recalc(){
     meta('Occupancy',`${S.occupancy} people`) +
     meta('Toilet','Composting (no water)')
   );
+
+  save();
 }
 
 function mcard(label,unit,val,sub){
@@ -485,8 +495,54 @@ function renderPumpChart(op){
   </svg>`);
 }
 
+// ---- persistence: auto-save inputs to this browser, restore on load ----
+// Scoped per origin: values typed into the Confluence/GitHub-Pages version persist
+// across reloads there; the local file:// copy keeps its own separate memory.
+const STORAGE_KEY = 'uplift-water-planner-v1';
+let booted = false;
+function setStatus(msg,icon){
+  setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`);
+}
+function save(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({v:1, S, fixtures, pumpCurve}));
+    if(booted) setStatus('Auto-saved','check');
+  }catch(e){ /* private mode / storage disabled — run without persistence */ }
+}
+function load(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return false;
+    const d = JSON.parse(raw);
+    if(d && d.S) Object.assign(S, d.S);
+    if(d && Array.isArray(d.fixtures)) fixtures = d.fixtures;
+    if(d && Array.isArray(d.pumpCurve)) pumpCurve = d.pumpCurve;
+    return true;
+  }catch(e){ return false; }
+}
+function resetDefaults(){
+  Object.assign(S, JSON.parse(JSON.stringify(DEFAULTS.S)));
+  fixtures  = JSON.parse(JSON.stringify(DEFAULTS.fixtures));
+  pumpCurve = JSON.parse(JSON.stringify(DEFAULTS.pumpCurve));
+  try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+  renderInputs();
+  recalc();
+  setStatus('Reset to defaults','rotate');
+}
+
+// snapshot factory defaults BEFORE loading saved values
+const DEFAULTS = {
+  S:         JSON.parse(JSON.stringify(S)),
+  fixtures:  JSON.parse(JSON.stringify(fixtures)),
+  pumpCurve: JSON.parse(JSON.stringify(pumpCurve)),
+};
+
+const restored = load();
 renderInputs();
-recalc();
+recalc();            // runs while booted=false, so save() stays silent here
+booted = true;
+setStatus(restored ? 'Restored your last inputs' : 'Edits auto-save to this browser',
+          restored ? 'rotate' : 'device-floppy');
 </script>
 </body>
 </html>
