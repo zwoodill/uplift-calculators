@@ -491,6 +491,13 @@ svg{display:block;max-width:100%;height:auto;}
     </div>
     <div class="notice teal" id="note-battery"></div>
     <div class="card">
+      <div class="section-title"><i class="ti ti-sun"></i>Solar generation &amp; makeup</div>
+      <div class="info-bar">How much of the daily load the PV array covers, and how the two extremes bracket it — <b>Alaska midwinter</b> (worst) vs <b>Texas summer</b> (best). Battery autonomy stays the no-sun worst case; this shows the realistic recharge.</div>
+      <div id="grp-solar"></div>
+    </div>
+    <div class="card"><div class="metric-grid" id="out-solar"></div></div>
+    <div class="notice teal" id="note-solar"></div>
+    <div class="card">
       <div class="section-title"><i class="ti ti-engine"></i>Pump sizing — usage → duty → pump → power</div>
       <div class="info-bar">Your fixtures set the <b>peak flow</b>; static lift + fixture pressure + friction set the <b>head</b>. Together they are the <b>duty point</b> the pump must hit. The pump's efficiency at that duty sets its <b>electrical draw</b>, which flows into the DC balance above.</div>
       <div class="stage-label">1 · Duty required <span>(driven by usage)</span></div>
@@ -567,6 +574,8 @@ const S = {
   // power / battery — default pack: 2× Pytes V5° (LFP, 51.2 V nom, 47.5–57.6 V, 100 Ah / 5.12 kWh each → 200 Ah / 10.24 kWh, 90% DoD, ~95% RT)
   budgetWh:4500, otherLoadsWh:1500,
   batteryDoDPct:90, systemEffPct:95, battModKwh:5.12, battModAh:100, battNomV:51.2, battModules:2,
+  // solar — scenario sets peak-sun-hours; Alaska winter & Texas summer bracket the range
+  solarW:1000, solarScenario:'tx-summer', solarPSH:6.0, solarDerate:75,
   // composting toilet — urine separation to a tank is the default; 24/7 DC vent fan
   toiletMode:'urine-sep', urineLppd:1.4, toiletEmptyDays:7, leachateFrac:35, toiletFanW:3,
 };
@@ -606,6 +615,9 @@ const TABS = [
   {id:'power',   label:'Power',   icon:'bolt'},
   {id:'diagram', label:'Diagram', icon:'sitemap'},
 ];
+
+const SOLAR_SCEN = { 'ak-winter':0.7, 'temperate':3.5, 'tx-summer':6.0 };   // peak sun hours by scenario
+function scenLabel(k){return {'ak-winter':'Alaska midwinter','temperate':'Temperate spring/fall','tx-summer':'Texas summer','custom':'Custom'}[k]||k;}
 
 const HWTABS = [
   {label:'Tank sizing',      icon:'droplet'},
@@ -662,6 +674,11 @@ const FIELDS = {
     ['battNomV','Nominal voltage','V',0.1,'Battery nominal voltage. Pytes V5° = 51.2 V (48 V class); usable range 47.5–57.6 V.'],
     ['batteryDoDPct','Usable depth (DoD)','%',5,'Usable depth of discharge. V5° rated 90% (LFP). Avoid 100% to preserve life.'],
     ['systemEffPct','Round-trip efficiency','%',1,'Delivery + round-trip efficiency. V5° ~95%; DC-direct loads add little conversion loss.'],
+  ],
+  'grp-solar':[
+    ['solarW','Panel array total','W',50,'Total nameplate wattage of the PV array on the roof.'],
+    ['solarPSH','Peak sun hours','h/day',0.1,'Equivalent full-sun hours per day for the location/season — set by the scenario, or override. Alaska midwinter ~0.5–1; temperate ~3.5; Texas summer ~6.'],
+    ['solarDerate','System derate','%',5,'Real-world losses: panel temperature, soiling, wiring, MPPT/charge efficiency. ~75% is typical.'],
   ],
   'grp-toilet':[
     ['urineLppd','Urine per person','L/day',0.1,'Urine produced per person per day (roughly 1–1.5 L is typical). Drives container / leachate tank sizing.','volL'],
@@ -760,6 +777,16 @@ function renderInputs(){
       </select></div></div>`;
     tg.innerHTML = sel + tg.innerHTML;
   }
+  // solar scenario select prepended into its group
+  const sg=el('grp-solar');
+  if(sg){
+    const opt=(v,l)=>`<option value="${v}"${S.solarScenario===v?' selected':''}>${l}</option>`;
+    const sel=`<div class="field"><div class="field-lbl">Location / season <i class="ti ti-help-circle help" title="Sets peak sun hours. Alaska midwinter and Texas summer bracket the range; temperate is a mid case; custom lets you type your own peak-sun-hours."></i></div>
+      <div class="field-input"><select onchange="updSolarScenario(this.value)">
+        ${opt('ak-winter','Alaska — midwinter')}${opt('temperate','Temperate — spring/fall')}${opt('tx-summer','Texas — summer')}${opt('custom','Custom')}
+      </select></div></div>`;
+    sg.innerHTML = sel + sg.innerHTML;
+  }
   renderFixtureTable();
   renderShowerHeadTable();
   renderCurveEditor();
@@ -767,6 +794,7 @@ function renderInputs(){
 function upd(key,val){S[key]=parseFloat(val);recalc();}
 function updDim(key,dim,val){S[key]=DIM[dim].i(parseFloat(val));recalc();}   // convert display -> stored
 function updStr(key,val){S[key]=val;renderInputs();recalc();}
+function updSolarScenario(v){S.solarScenario=v; if(SOLAR_SCEN[v]!=null) S.solarPSH=SOLAR_SCEN[v]; renderInputs(); recalc();}
 
 // ---- fixture table ----
 function renderFixtureTable(){
@@ -1082,6 +1110,31 @@ function recalc(){
       ` Edit pack parameters via the battery spec button. V5° nominal 51.2 V, LFP.`;
   }
 
+  // ---------- SOLAR (generation vs load; scenario brackets the range) ----------
+  const solarWhDay=S.solarW*S.solarPSH*(S.solarDerate/100);
+  const solarCoverPct=totalLoadWh>0?solarWhDay/totalLoadWh*100:0;
+  const solarNet=solarWhDay-totalLoadWh;
+  const solarDrainDays=solarNet<0?usableWh/(-solarNet):Infinity;
+  Object.assign(R,{solarWhDay,solarCoverPct,solarNet});
+  setHTML('out-solar',
+    mcard('Solar harvest','Wh/day',f(solarWhDay,0),`${f(S.solarW,0)} W × ${f(S.solarPSH,1)} h × ${S.solarDerate}%`) +
+    mcard('Load covered','%',f(solarCoverPct,0),`of ${f(totalLoadWh,0)} Wh/day`) +
+    mcard('Net daily','Wh/day',(solarNet>=0?'+':'')+f(solarNet,0),solarNet>=0?'surplus → recharges':'deficit → draws bank') +
+    mcard('Battery lasts',solarNet<0?'days':'',solarNet<0?f(solarDrainDays,1):'∞',solarNet<0?'at this harvest':'solar ≥ load')
+  );
+  const akWh=S.solarW*SOLAR_SCEN['ak-winter']*(S.solarDerate/100), txWh=S.solarW*SOLAR_SCEN['tx-summer']*(S.solarDerate/100);
+  const nsv=el('note-solar');
+  if(nsv){
+    const ok=solarNet>=0 || solarDrainDays>=S.powerDays;
+    nsv.className='notice '+(ok?'teal':'amber');
+    nsv.innerHTML=`<div class="notice-title"><i class="ti ti-${ok?'circle-check':'alert-triangle'}"></i>Solar makeup — ${scenLabel(S.solarScenario)}</div>`+
+      `A ${f(S.solarW,0)} W array at ${f(S.solarPSH,1)} peak-sun-hours (${S.solarDerate}% derate) harvests <b>${f(solarWhDay/1000,2)} kWh/day</b> — <b>${f(solarCoverPct,0)}%</b> of the ${f(totalLoadWh/1000,2)} kWh load. `+
+      (solarNet>=0
+        ? `Surplus of <b>${f(solarNet,0)} Wh/day</b> recharges the bank once loads are met. `
+        : `Deficit of <b>${f(-solarNet,0)} Wh/day</b> draws the bank down — it would last <b>${f(solarDrainDays,1)} days</b> at this harvest. `)+
+      `Range for this array: Alaska midwinter ≈ <b>${f(akWh/1000,2)} kWh/day</b>, Texas summer ≈ <b>${f(txWh/1000,2)} kWh/day</b>. The ${S.powerDays}-day battery autonomy remains the no-sun worst case.`;
+  }
+
   // ---------- HOT WATER SUB-TABS (render after battery so %-of-bank is known) ----------
   buildGpmBtns(); buildTempBtns(); buildShapeBtns(); buildHeaderBtns();
   renderHwSizing(); renderHwHeater(); renderHwInsulation(); renderHwTradeoff(); renderHwWall();
@@ -1099,6 +1152,7 @@ function recalc(){
     mcard('Total load','Wh/day',f(R.totalLoadWh,0),'water + other') +
     mcard('Battery bank','kWh',f(R.installedWh/1000,2),`${R.modules}× Pytes V5° installed`,'hero') +
     mcard('Peak current','A DC',f(R.peakAmps,1),'heater + pump') +
+    mcard('Solar makeup','%',f(R.solarCoverPct,0),`${scenLabel(S.solarScenario)}`) +
     mcard('Toilet liquid',uVu()+'/day',f(uV(R.liquidGalDay),2),S.toiletMode==='urine-sep'?'urine sep':'leachate')
   );
 
