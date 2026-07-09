@@ -496,6 +496,10 @@ svg{display:block;max-width:100%;height:auto;}
       <div class="stage-label">1 · Duty required <span>(driven by usage)</span></div>
       <div class="metric-grid" id="out-duty"></div>
       <div class="stage-label">2 · Plumbing &amp; pump inputs</div>
+      <div class="ctrl-card" style="margin-bottom:10px;">
+        <div class="ctrl-label">Header / trunk pipe size <span style="text-transform:none;font-weight:400;">(carries the design flow — watch the velocity)</span></div>
+        <div class="btn-row" id="header-btns"></div>
+      </div>
       <div id="grp-pump"></div>
       <div style="margin-top:12px;font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;">Candidate pump curve — flow vs head. Editable operating points:</div>
       <div id="pump-curve-editor"></div>
@@ -557,8 +561,9 @@ const S = {
   inletF:50, setpointF:140, tankGal:10, elementW:1500,
   insulRperIn:6.5, insulIn:3, ambientF:68,
   showerMixF:105, foI:1.5, tankShape:'cyl',
-  // pump — duty derived from usage; electrical power derived from duty + efficiency
-  staticLiftFt:7.22, fixtureHeadFt:46, frictionK:2.5, pumpEffPct:40, maxSysPsi:80,
+  // pump — shower-governed critical loop; ¾" header + ½" branch; friction via Hazen-Williams
+  staticLiftFt:7.22, fixtureHeadFt:46, pumpEffPct:40, maxSysPsi:80,
+  headerSize:'3/4', headerLenFt:10, branchLenFt:8, n90:4, nTee:2, simulFactor:1.3,
   // power / battery — default pack: 2× Pytes V5° (LFP, 51.2 V nom, 47.5–57.6 V, 100 Ah / 5.12 kWh each → 200 Ah / 10.24 kWh, 90% DoD, ~95% RT)
   budgetWh:4500, otherLoadsWh:1500,
   batteryDoDPct:90, systemEffPct:95, battModKwh:5.12, battModAh:100, battNomV:51.2, battModules:2,
@@ -636,11 +641,15 @@ const FIELDS = {
     ['foI','Design margin (FoI)','×',0.1,'Factor of Increase — a design safety margin multiplied onto shower demand. A value above 1 sizes for more than the nominal draw.'],
   ],
   'grp-pump':[
-    ['staticLiftFt','Static lift','ft',0.5,'Vertical height the pump must raise water, from tank to the highest fixture (head).','head'],
-    ['fixtureHeadFt','Fixture pressure (head)','ft',1,'Residual pressure you want at the fixture, expressed as head. A comfortable shower wants roughly 20 psi (~1.4 bar). Added to lift + friction to set the duty head.','head'],
-    ['frictionK','Friction coeff K','ft/GPM²',0.1,'Plumbing resistance. Head lost to friction rises with flow squared (K x flow²). Higher for long or narrow pipe runs.'],
+    ['staticLiftFt','Static lift to shower head','ft',0.5,'Vertical rise from the tank outlet up to the shower head — the governing (highest) fixture. Pure elevation head.','head'],
+    ['fixtureHeadFt','Shower residual pressure','ft',1,'Pressure to hold at the shower head for a good spray. HUD sets no floor (§3280.609) — your design choice; ~20 psi (14 m) is comfortable.','head'],
+    ['headerLenFt','Header / trunk length','ft',1,'Length of the shared trunk from pump to the manifold (carries the design flow). Toggle its size below.','head'],
+    ['branchLenFt','Shower branch length','ft',1,'Length of the ½″ home-run branch from the manifold to the shower.','head'],
+    ['n90','90° elbows on loop','#',1,'Total 90° elbows on the pump→shower path. Each adds equivalent pipe length (friction).'],
+    ['nTee','Tees on loop','#',1,'Total tees on the pump→shower path. Each adds equivalent pipe length (friction).'],
+    ['simulFactor','Simultaneity margin','×',0.05,'Factor of ignorance on the shower design flow — covers the odd shower-and-dishes overlap. 1.0 = shower alone; higher adds headroom.'],
     ['pumpEffPct','Pump efficiency','%',5,'Combined pump + motor (wire-to-water) efficiency. Small DC booster/diaphragm pumps run ~30–45%. Electrical draw = hydraulic power ÷ this.'],
-    ['maxSysPsi','Max system pressure','psi',5,'HUD ceiling (§3280.609). Off-grid, the pump/accumulator cut-out setpoint is the functional PRV — it must never deliver more than this at any fixture. Keep ≤ 80 psi.'],
+    ['maxSysPsi','Max system pressure','psi',5,'HUD ceiling (§3280.609). The pump/accumulator cut-out is the functional PRV — keep ≤ 80 psi.'],
   ],
   'grp-loads':[
     ['budgetWh','Water-system energy budget','Wh/day',100,'Daily energy you are willing to allot to the water system (heating + pumping). The balance check flags if you exceed it.'],
@@ -845,7 +854,14 @@ function pumpHead(q){
     const t=(q-c[i].q)/(c[i+1].q-c[i].q);return c[i].h+t*(c[i+1].h-c[i].h);}
   return 0;
 }
-function sysHead(q){return S.staticLiftFt+S.fixtureHeadFt+S.frictionK*q*q;}  // lift + fixture pressure + friction(flow²)
+// Hazen-Williams friction for PEX (C=150). id inches, q GPM → ft head per ft of pipe.
+const PEX_HALF_ID=0.485, PEX_3Q_ID=0.681;
+function hwSlope(q,id){ if(q<=0) return 0; return 0.002083*Math.pow(100/150,1.852)*Math.pow(q,1.852)/Math.pow(id,4.8655); }
+function pipeVel(q,id){ return 0.4085*q/(id*id); }                 // ft/s
+function headerID(){ return S.headerSize==='3/4'?PEX_3Q_ID:PEX_HALF_ID; }
+function branchEquivFt(){ return S.branchLenFt + S.n90*1.5 + S.nTee*3; }  // ½″ fitting equiv lengths (ft)
+function loopFrictionFt(q){ return hwSlope(q,headerID())*S.headerLenFt + hwSlope(q,PEX_HALF_ID)*branchEquivFt(); }
+function sysHead(q){ return S.staticLiftFt + S.fixtureHeadFt + loopFrictionFt(q); }  // TDH at flow q (shower critical loop)
 function operatingPoint(){
   const qmax=[...pumpCurve].sort((a,b)=>b.q-a.q)[0].q;
   let prev=pumpHead(0)-sysHead(0);
@@ -956,33 +972,38 @@ function recalc(){
     ` Testing will pin down the real split — adjust "urine per person" and "leachate fraction" once you have data.`
   );
 
-  // ---------- PUMP (usage → duty → selection → power) ----------
-  // 1) DUTY comes from usage: peak simultaneous flow + head to overcome (lift + fixture pressure + friction)
-  const dutyFlow=peakFlow;                              // required flow (from fixtures)
-  const reqHead=sysHead(dutyFlow);                      // required head at that flow
-  const hydraulicW=dutyFlow*reqHead*0.1885;            // hydraulic power at duty (0.1885 W per GPM·ft)
+  // ---------- PUMP (shower critical loop → TDH → selection → power) ----------
+  // 1) DUTY: shower is the governing fixture; design flow = shower flow × factor of ignorance
+  const shFix=showerFix();
+  const qShower=shFix.gpm;
+  const dutyFlow=qShower*S.simulFactor;                 // design flow (covers rare concurrency)
+  const headerFricFt=hwSlope(dutyFlow,headerID())*S.headerLenFt;
+  const branchFricFt=hwSlope(dutyFlow,PEX_HALF_ID)*branchEquivFt();
+  const reqHead=sysHead(dutyFlow);                      // TDH = lift + residual + friction
+  const vHeader=pipeVel(dutyFlow,headerID());           // ft/s
+  const vBranch=pipeVel(qShower,PEX_HALF_ID);
+  const hydraulicW=dutyFlow*reqHead*0.1885;             // 0.1885 W per GPM·ft
   // 2) SELECTION: does the candidate pump curve reach the duty point? + its natural operating point
   const op=operatingPoint();
   const provideHead=pumpHead(dutyFlow);
   const canMeetPeak=provideHead>=reqHead;
   // 3) POWER follows from duty + efficiency (not a hand-entered watt)
-  const pumpElecW=hydraulicW/Math.max(S.pumpEffPct/100,0.01);   // required electrical power
+  const pumpElecW=hydraulicW/Math.max(S.pumpEffPct/100,0.01);
   const deliveredFlow=Math.max(op.q,0.01);
   const pumpRuntimeMin=totalFresh/deliveredFlow;
   const pumpWhDay=pumpElecW*(pumpRuntimeMin/60);
   const pumpAmps=pumpElecW/S.busVoltage;
-  // HUD pressure checks (§3280.609): 80 psi ceiling; residual is a design/mfr input (no code floor)
   const PSI2FT=2.3067;
-  const reqPsi=reqHead/PSI2FT;               // dynamic pressure to serve peak fixture at peak flow
-  const residualPsi=S.fixtureHeadFt/PSI2FT;  // designed residual at fixture
-  const pressureOK=reqPsi<=S.maxSysPsi;
-  Object.assign(R,{pumpWhDay,pumpAmps,canMeetPeak,reqHead,dutyFlow,provideHead,pumpElecW,hydraulicW,reqPsi,residualPsi,pressureOK,opQ:op.q,opH:op.h,pumpRuntimeMin});
+  const reqPsi=reqHead/PSI2FT, residualPsi=S.fixtureHeadFt/PSI2FT, pressureOK=reqPsi<=S.maxSysPsi;
+  const maxSingle=Math.max(...fixtures.map(fx=>fx.gpm));   // largest single-fixture flow (hose) — flow-capacity check
+  Object.assign(R,{pumpWhDay,pumpAmps,canMeetPeak,reqHead,dutyFlow,qShower,provideHead,pumpElecW,hydraulicW,reqPsi,residualPsi,pressureOK,opQ:op.q,opH:op.h,pumpRuntimeMin,headerFricFt,branchFricFt,vHeader,vBranch,maxSingle});
 
   // requirement (driven by usage)
   setHTML('out-duty',
-    mcard('Peak flow demand',uFlu(),f(uFl(dutyFlow),2),'largest simultaneous fixtures') +
-    mcard('Required head',uHu(),f(uH(reqHead),0),`lift ${HEAD(S.staticLiftFt,0)} + press ${HEAD(S.fixtureHeadFt,0)} + friction`) +
-    mcard('Hydraulic power','W',f(hydraulicW,0),'flow × head at duty')
+    mcard('Shower design flow',uFlu(),f(uFl(dutyFlow),2),`shower ${FLOW(qShower,2)} × ${f(S.simulFactor,2)}`) +
+    mcard('Total Dynamic Head',uHu(),f(uH(reqHead),1),`${f(reqPsi,0)} psi · lift+resid+friction`) +
+    mcard('Header velocity',(isM()?'m/s':'ft/s'),f(isM()?vHeader*0.3048:vHeader,2),`${S.headerSize}″ header ${vHeader<=5?'✓':'✗ >5 ft/s'}`) +
+    mcard('Hydraulic power','W',f(hydraulicW,0),'flow × TDH at duty')
   );
   // selection + resulting power
   setHTML('out-pump',
@@ -995,12 +1016,14 @@ function recalc(){
   const npump=el('note-pump');
   if(npump){
     npump.className='notice '+(canMeetPeak?'teal':'amber');
-    npump.innerHTML=`<div class="notice-title"><i class="ti ti-${canMeetPeak?'circle-check':'alert-triangle'}"></i>${canMeetPeak?'Pump meets the duty':'Pump undersized for duty'}</div>`+
-      `<b>Usage sets the duty:</b> peak flow <b>${FLOW(dutyFlow,2)}</b> at <b>${HEAD(reqHead,0)}</b> head (static lift + fixture pressure + friction at that flow). `+
+    npump.innerHTML=`<div class="notice-title"><i class="ti ti-${canMeetPeak?'circle-check':'alert-triangle'}"></i>${canMeetPeak?'Pump meets the shower duty':'Pump undersized for shower duty'}</div>`+
+      `<b>Shower governs the head:</b> design flow <b>${FLOW(dutyFlow,2)}</b> (shower × ${f(S.simulFactor,2)}) at <b>${HEAD(reqHead,1)} / ${f(reqPsi,0)} psi</b> TDH (lift + residual + friction). `+
       (canMeetPeak
-        ? `Your candidate pump makes ${HEAD(provideHead,0)} there — enough. `
-        : `Your candidate pump only makes ${HEAD(provideHead,0)} there — raise the curve or avoid simultaneous use. `)+
-      `<b>Pump drives power:</b> that duty needs ${f(hydraulicW,0)} W hydraulic ÷ ${S.pumpEffPct}% = <b>${f(pumpElecW,0)} W</b> electrical (${f(pumpAmps,1)} A), and ~${f(pumpRuntimeMin,0)} min/day of running ⇒ <b>${f(pumpWhDay,0)} Wh/day</b> into the DC balance above.`;
+        ? `The candidate pump makes ${HEAD(provideHead,0)} there — enough. `
+        : `The candidate pump only makes ${HEAD(provideHead,0)} there — raise the curve. `)+
+      `Also confirm it passes the largest single draw (${FLOW(R.maxSingle,2)}, e.g. hose) at low head. `+
+      `<b>Pump drives power:</b> ${f(hydraulicW,0)} W hydraulic ÷ ${S.pumpEffPct}% = <b>${f(pumpElecW,0)} W</b> (${f(pumpAmps,1)} A) × ~${f(pumpRuntimeMin,0)} min/day ⇒ <b>${f(pumpWhDay,0)} Wh/day</b>. `+
+      `Header ${vHeader<=5?'velocity OK':'<b>velocity high — go ¾″</b>'} (${f(vHeader,1)} ft/s on ${S.headerSize}″).`;
   }
   renderPumpChart(op);
   renderPumpMath();
@@ -1060,7 +1083,7 @@ function recalc(){
   }
 
   // ---------- HOT WATER SUB-TABS (render after battery so %-of-bank is known) ----------
-  buildGpmBtns(); buildTempBtns(); buildShapeBtns();
+  buildGpmBtns(); buildTempBtns(); buildShapeBtns(); buildHeaderBtns();
   renderHwSizing(); renderHwHeater(); renderHwInsulation(); renderHwTradeoff(); renderHwWall();
   renderShowerHeadTable();
 
@@ -1180,6 +1203,11 @@ function buildShapeBtns(){
   c.innerHTML=[['cyl','Cylinder'],['cube','Cube'],['slab','Low-profile']].map(o=>`<button class="sel" onclick="setShape('${o[0]}')" style="${o[0]===S.tankShape?'background:#E6F1FB;color:#185FA5;border-color:#185FA5;':'color:var(--color-text-secondary);'}">${o[1]}</button>`).join('');
 }
 function setShape(v){S.tankShape=v;recalc();}
+function buildHeaderBtns(){
+  const c=el('header-btns');if(!c)return;
+  c.innerHTML=[['1/2','½″ header'],['3/4','¾″ header']].map(o=>`<button class="sel" onclick="setHeaderSize('${o[0]}')" style="${o[0]===S.headerSize?'background:#E6F1FB;color:#185FA5;border-color:#185FA5;':'color:var(--color-text-secondary);'}">${o[1]}</button>`).join('');
+}
+function setHeaderSize(v){S.headerSize=v;recalc();}
 
 // ---- HW tab 0: tank sizing ----
 function renderHwSizing(){
@@ -1345,18 +1373,20 @@ function renderHwWall(){
 // ---- pump sizing: step-by-step TDH / power worked example (live) ----
 function renderPumpMath(){
   const host=el('pump-math'); if(!host) return;
-  const fricFt=S.frictionK*R.dutyFlow*R.dutyFlow;   // friction head at design flow
   const row=(n,name,formula,result)=>`<div class="mathrow"><div class="mathn">${n}</div><div class="mathb"><div class="mathname">${name}</div><div class="mathf">${formula}</div></div><div class="mathr">${result}</div></div>`;
   let h='';
-  h+=row('1','Design flow&nbsp;Q','peak simultaneous demand = 2 largest indoor fixtures',`<b>${FLOW(R.dutyFlow,2)}</b>`);
-  h+=row('2','Friction head','h<sub>f</sub> = K · Q²'+`&nbsp;&nbsp;(K = ${f(S.frictionK,1)})`,`${HEAD(fricFt,1)}`);
-  h+=row('3','Total Dynamic Head','TDH = lift + fixture residual + h<sub>f</sub>',`${HEAD(S.staticLiftFt,1)} + ${HEAD(S.fixtureHeadFt,1)} + ${HEAD(fricFt,1)} = <b>${HEAD(R.reqHead,1)}</b>`);
-  h+=row('4','Pressure at fixture','P = TDH → psi (÷ 2.307 ft/psi)',`<b>${f(R.reqPsi,1)} psi</b> &nbsp;${R.reqPsi<=S.maxSysPsi?'✓ ≤':'✗ >'} ${S.maxSysPsi}`);
-  h+=row('5','Hydraulic power','P<sub>hyd</sub> = ρ·g·Q·TDH',`<b>${f(R.hydraulicW,0)} W</b>`);
-  h+=row('6','Pump input power','P<sub>elec</sub> = P<sub>hyd</sub> ÷ η'+`&nbsp;&nbsp;(η = ${S.pumpEffPct}%)`,`${f(R.hydraulicW,0)} ÷ ${(S.pumpEffPct/100).toFixed(2)} = <b>${f(R.pumpElecW,0)} W</b>`);
-  h+=row('7','Current','I = P<sub>elec</sub> ÷ V',`${f(R.pumpElecW,0)} ÷ ${S.busVoltage} = <b>${f(R.pumpAmps,1)} A</b>`);
-  h+=row('8','Operating point','pump curve ∩ system curve',`${FLOW(R.opQ,2)} @ ${HEAD(R.opH,1)}`);
-  h+=row('9','Daily pump energy','E = P<sub>elec</sub> × (daily volume ÷ Q<sub>op</sub>)',`${f(R.pumpRuntimeMin,0)} min/d → <b>${f(R.pumpWhDay,0)} Wh/d</b>`);
+  h+=row('1','Shower flow','governing fixture (highest + needs pressure)',`<b>${FLOW(R.qShower,2)}</b>`);
+  h+=row('2','Design flow&nbsp;Q','shower × simultaneity margin'+`&nbsp;(×${f(S.simulFactor,2)})`,`<b>${FLOW(R.dutyFlow,2)}</b>`);
+  h+=row('3','Static lift','tank → shower head elevation',`${HEAD(S.staticLiftFt,1)}`);
+  h+=row('4','Residual','pressure held at the shower head',`${HEAD(S.fixtureHeadFt,1)} (${f(R.residualPsi,0)} psi)`);
+  h+=row('5','Header friction','Hazen-Williams · '+`${S.headerSize}″ × ${HEAD(S.headerLenFt,0)}`,`${HEAD(R.headerFricFt,2)} &nbsp;(${f(R.vHeader,1)} ft/s ${R.vHeader<=5?'✓':'✗'})`);
+  h+=row('6','Branch friction','½″ × '+`${HEAD(S.branchLenFt,0)} + ${S.n90}×90° + ${S.nTee}×tee`,`${HEAD(R.branchFricFt,2)}`);
+  h+=row('7','Total Dynamic Head','TDH = lift + residual + friction',`<b>${HEAD(R.reqHead,1)}</b> = ${f(R.reqPsi,1)} psi ${R.reqPsi<=S.maxSysPsi?'✓ ≤':'✗ >'} ${S.maxSysPsi}`);
+  h+=row('8','Hydraulic power','P<sub>hyd</sub> = ρ·g·Q·TDH',`<b>${f(R.hydraulicW,0)} W</b>`);
+  h+=row('9','Pump input power','P<sub>elec</sub> = P<sub>hyd</sub> ÷ η'+`&nbsp;(η=${S.pumpEffPct}%)`,`<b>${f(R.pumpElecW,0)} W</b>`);
+  h+=row('10','Current','I = P<sub>elec</sub> ÷ V',`${f(R.pumpElecW,0)} ÷ ${S.busVoltage} = <b>${f(R.pumpAmps,1)} A</b>`);
+  h+=row('11','Operating point','pump curve ∩ system curve',`${FLOW(R.opQ,2)} @ ${HEAD(R.opH,1)}`);
+  h+=row('12','Daily pump energy','E = P<sub>elec</sub> × (daily volume ÷ Q<sub>op</sub>)',`${f(R.pumpRuntimeMin,0)} min/d → <b>${f(R.pumpWhDay,0)} Wh/d</b>`);
   host.innerHTML=h;
 }
 
@@ -1428,8 +1458,8 @@ function renderDiagram(){
   vEdge('h_in','h_hf');vEdge('h_hf','h_he');vEdge('h_he','h_sb');vEdge('h_sb','h_am');
   // lane 3: pump
   const pOK=R.canMeetPeak, prOK=R.pressureOK;
-  node('p_in',2,36,54,[`IN: lift ${HEAD(S.staticLiftFt,0)} · fix ${HEAD(S.fixtureHeadFt,0)}`,`K ${f(S.frictionK,1)} · eff ${S.pumpEffPct}%`,`max ${S.maxSysPsi} psi · curve`],'in');
-  node('p_rh',2,108,40,[`reqHead ${HEAD(R.reqHead,0)} (${f(R.reqPsi,1)} psi)`,`${prOK?'≤':'EXCEEDS'} ${S.maxSysPsi} psi ${prOK?'✓':'✗'}`],prOK?'calc':'flag');
+  node('p_in',2,36,54,[`IN: lift ${HEAD(S.staticLiftFt,1)} · resid ${HEAD(S.fixtureHeadFt,0)}`,`${S.headerSize}″ hdr ${HEAD(S.headerLenFt,0)} · ½″ br ${HEAD(S.branchLenFt,0)}`,`×${f(S.simulFactor,2)} · eff ${S.pumpEffPct}% · ≤${S.maxSysPsi}psi`],'in');
+  node('p_rh',2,108,40,[`TDH ${HEAD(R.reqHead,1)} (${f(R.reqPsi,1)} psi)`,`${prOK?'≤':'EXCEEDS'} ${S.maxSysPsi} psi ${prOK?'✓':'✗'}`],prOK?'calc':'flag');
   node('p_hy',2,166,28,[`hydraulic = ${f(R.hydraulicW,0)} W`],'calc');
   node('p_el',2,212,28,[`pumpElec ${f(R.pumpElecW,0)} W · ${f(R.pumpAmps,1)} A`],'key');
   node('p_op',2,258,40,[`op pt ${FLOW(R.opQ,2)} @ ${HEAD(R.opH,0)}`,`${f(R.pumpRuntimeMin,0)} min/d → ${f(R.pumpWhDay,0)} Wh/d`],'calc');
@@ -1477,7 +1507,7 @@ function renderCompliance(){
     ['info',`<b>Min residual pressure.</b> Not set by code — a design/mfr choice. Currently <b>${f(R.residualPsi,0)} psi</b> (${HEAD(S.fixtureHeadFt,0)}) at the peak fixture.`,'§3280.609'],
     [capFix.length?'warn':'ok',`<b>Fixture flow ≤ 2.5 gpm.</b> ${capFix.length?('Over limit: '+capFix.map(fx=>`${fx.name} ${f(fx.gpm,2)} gpm`).join(', ')):'All supplied fixtures within limit.'}`,'§3280.607'],
     ['info',`<b>Toilet ≤ 1.6 gal/flush.</b> Composting toilet — no flush water; N/A.`,'§3280.603'],
-    ['ok',`<b>¾″ threaded inlet.</b> Peak demand ${FLOW(R.dutyFlow,2)} is within ¾″ capacity at ≤ ${f(S.maxSysPsi,0)} psi.`,'§3280.609'],
+    ['ok',`<b>¾″ threaded inlet.</b> Largest single draw ${FLOW(R.maxSingle,2)} is within ¾″ capacity at ≤ ${f(S.maxSysPsi,0)} psi.`,'§3280.609'],
     [S.setpointF<210?'ok':'warn',`<b>Hot-water T&amp;P relief ≤ 150 psi / ≤ 210 °F.</b> Setpoint ${T(S.setpointF)} and design pressure ≤ ${f(S.maxSysPsi,0)} psi are both under the relief limits; account for thermal expansion in the accumulator/relief.`,'§3280.609'],
     ['info',`<b>Pressure test: 80 ±5 psi for 15 min, zero loss.</b> The accumulator + pump control must hold static pressure without decay.`,'§3280.612'],
     ['info',`<b>Demand / simultaneity method.</b> The reg gives no WSFU table; this tool takes peak = the two largest indoor fixtures running together. Confirm the method.`,'§3280.609'],
