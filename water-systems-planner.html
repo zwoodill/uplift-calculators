@@ -183,7 +183,10 @@ svg{display:block;max-width:100%;height:auto;}
 
   <div class="toolbar">
     <span class="save-status" id="save-status"></span>
-    <button class="btn" onclick="resetDefaults()"><i class="ti ti-rotate"></i> Reset to defaults</button>
+    <span style="display:flex;gap:8px;align-items:center;">
+      <button class="btn" id="unit-toggle" onclick="toggleUnits()" title="Toggle metric / imperial units"></button>
+      <button class="btn" onclick="resetDefaults()"><i class="ti ti-rotate"></i> Reset to defaults</button>
+    </span>
   </div>
 
   <div class="tabs" id="tabs"></div>
@@ -277,13 +280,13 @@ svg{display:block;max-width:100%;height:auto;}
       </div>
       <div class="metric-grid">
         <div class="mcard"><div class="mcard-label">Hot water from tank</div><div class="mcard-val" id="m-hot"></div><div class="mcard-sub" id="m-hot-note"></div></div>
-        <div class="mcard"><div class="mcard-label">Capacity multiplier</div><div class="mcard-val" id="m-mult"></div><div class="mcard-sub">shower gal per tank gal</div></div>
+        <div class="mcard"><div class="mcard-label">Capacity multiplier</div><div class="mcard-val" id="m-mult"></div><div class="mcard-sub">usable shower vol ÷ stored vol</div></div>
         <div class="mcard"><div class="mcard-label">Tank headroom</div><div class="mcard-val" id="m-tank"></div><div class="mcard-sub" id="m-tank-note"></div></div>
         <div class="mcard"><div class="mcard-label">Post-shower tank temp</div><div class="mcard-val" id="m-post"></div><div class="mcard-sub">before recovery heating</div></div>
       </div>
       <div class="card" style="overflow:hidden;">
         <div class="section-title">Tank temp effect on capacity <span style="font-size:11px;font-weight:400;color:var(--color-text-secondary);">(at current flow rate with FoI)</span></div>
-        <table class="hwtbl"><thead><tr><th style="width:22%;">Tank temp</th><th style="width:20%;">Hot fraction</th><th style="width:28%;">Shower gal / tank gal</th><th style="width:30%;">Hot gal needed</th></tr></thead><tbody id="temp-table"></tbody></table>
+        <table class="hwtbl"><thead><tr><th style="width:22%;">Tank temp</th><th style="width:20%;">Hot fraction</th><th style="width:28%;">Usable ÷ stored</th><th style="width:30%;">Hot needed</th></tr></thead><tbody id="temp-table"></tbody></table>
         <p class="hwnote"><i class="ti ti-info-circle"></i>A thermostatic mixing valve (TMV) blends tank water with cold to hit the shower temp. Higher storage temp = more effective capacity per gallon stored.</p>
       </div>
       <div class="card" style="overflow:hidden;">
@@ -346,7 +349,7 @@ svg{display:block;max-width:100%;height:auto;}
           <span><span class="sw" style="background:#0F6E56;"></span>Usable shower capacity (left)</span>
           <span><span class="sw" style="background:#A32D2D;"></span>Standby loss (right)</span>
           <span><span class="sw" style="border-top:2px dashed #185FA5;height:0;"></span>Your need</span>
-          <span><span class="sw" style="background:#E1F5EE;border:.5px solid #9FE1CB;"></span>Sweet spot 130–140°F</span>
+          <span><span class="sw" style="background:#E1F5EE;border:.5px solid #9FE1CB;"></span>Sweet spot 130–140°F / 54–60°C</span>
         </div>
       </div>
       <div class="card" style="overflow:hidden;margin-bottom:12px;">
@@ -510,19 +513,19 @@ const FIELDS = {
     ['reservePct','Tank reserve','%',5,'Safety buffer kept in the fresh tank on top of daily use so you never run it bone-dry. 15% is roughly a partial extra day of margin.'],
   ],
   'grp-hot':[
-    ['inletF','Cold inlet temp','°F',1,'Temperature of the incoming cold water. A colder inlet means more energy is needed to reach setpoint.'],
-    ['setpointF','Tank setpoint','°F',1,'Temperature the hot tank is held at. Higher = more usable shower water per stored gallon, but more standby loss. 140°F also pasteurizes (kills Legionella).'],
-    ['tankGal','Hot tank size','gal',0.5,'Physical water capacity of the hot-water tank.'],
+    ['inletF','Cold inlet temp','°F',1,'Temperature of the incoming cold water. A colder inlet means more energy is needed to reach setpoint.','temp'],
+    ['setpointF','Tank setpoint','°F',1,'Temperature the hot tank is held at. Higher = more usable shower water per stored gallon, but more standby loss. 140°F also pasteurizes (kills Legionella).','temp'],
+    ['tankGal','Hot tank size','gal',0.5,'Physical water capacity of the hot-water tank.','vol'],
     ['elementW','DC heater power','W',50,'Power of the DC heating element. Higher = faster reheat and more amps, but the same total energy per heat cycle.'],
-    ['insulRperIn','Insulation R / inch','R/in',0.5,'Insulation quality — R-value per inch of material (closed-cell foam is about 6.5). Total R = this x thickness.'],
-    ['insulIn','Insulation thickness','in',0.25,'Thickness of insulation around the tank. More cuts standby loss but grows the tank box in every dimension.'],
-    ['ambientF','Cabin ambient temp','°F',1,'Air temperature around the tank. The tank bleeds heat to this; a bigger gap means more standby loss.'],
-    ['showerMixF','Shower mixed temp','°F',1,'Comfortable temperature at the shower head after the mixing valve (TMV) blends hot tank water with cold. About 105°F.'],
+    ['insulRperIn','Insulation R / length','R/in',0.5,'Insulation quality — R-value per unit of thickness (closed-cell foam is about R-6.5 per inch). Total R = this x thickness.','rpl'],
+    ['insulIn','Insulation thickness','in',0.25,'Thickness of insulation around the tank. More cuts standby loss but grows the tank box in every dimension.','len'],
+    ['ambientF','Cabin ambient temp','°F',1,'Air temperature around the tank. The tank bleeds heat to this; a bigger gap means more standby loss.','temp'],
+    ['showerMixF','Shower mixed temp','°F',1,'Comfortable temperature at the shower head after the mixing valve (TMV) blends hot tank water with cold. About 105°F.','temp'],
     ['foI','Design margin (FoI)','×',0.1,'Factor of Increase — a design safety margin on shower demand. 1.5x sizes for 50% more than the nominal draw.'],
   ],
   'grp-pump':[
     ['pumpRatedW','Pump power at duty','W',10,'Electrical power the pump draws at its operating point. Sets pump amps and daily pumping energy.'],
-    ['staticLiftFt','Static lift','ft',0.5,'Vertical height the pump must raise water, from tank to the highest fixture, in feet of head.'],
+    ['staticLiftFt','Static lift','ft',0.5,'Vertical height the pump must raise water, from tank to the highest fixture (head).','head'],
     ['frictionK','Friction coeff K','ft/GPM²',0.1,'Plumbing resistance. Head lost to friction rises with flow squared (K x GPM²). Higher for long or narrow pipe runs.'],
   ],
   'grp-power':[
@@ -532,7 +535,7 @@ const FIELDS = {
     ['systemEffPct','System efficiency','%',1,'Round-trip, wiring and converter efficiency. Real usable energy is less than nameplate; 90% is typical.'],
   ],
   'grp-toilet':[
-    ['urineLppd','Urine per person','L/day',0.1,'Urine produced per person per day — about 1.4 L is typical. Drives container / leachate tank sizing.'],
+    ['urineLppd','Urine per person','L/day',0.1,'Urine produced per person per day — about 1.4 L is typical. Drives container / leachate tank sizing.','volL'],
     ['toiletEmptyDays','Days between empties','days',1,'How often you empty the urine container or leachate tank. Longer intervals need a larger container.'],
     ['leachateFrac','Leachate fraction','%',5,'Leachate mode only: the share of urine that drains off as liquid; the rest is absorbed or evaporated in the compost.'],
   ],
@@ -545,6 +548,49 @@ function f(v,dec){if(!isFinite(v))return '—';return Number(v).toLocaleString(u
 function heatWh(gal,dT){return 8.34*gal*dT/3.412;} // BTU to heat water / 3.412 = Wh
 function fixGal(fx){return fx.gpm*fx.min*(fx.pp?occEqG:1);} // gal/day (per-person scales with water-equiv occupancy)
 const L2GAL=0.264172;
+
+// ============================================================================
+// UNITS — all internal math is imperial (°F, gal, GPM, ft, in, ft²; urine in L).
+// Display/inputs convert at the boundary based on unitSys. Metric is default.
+// ============================================================================
+let unitSys = 'metric';   // 'metric' | 'imperial'
+const isM = ()=>unitSys==='metric';
+// value converters (stored -> display) and inverses (display -> stored)
+function uT(fv){return isM()?(fv-32)*5/9:fv;}            function uTi(d){return isM()?d*9/5+32:d;}      // temperature
+function uDT(fd){return isM()?fd*5/9:fd;}                                                                // temperature difference (ΔT)
+function uV(g){return isM()?g*3.78541:g;}                function uVi(d){return isM()?d/3.78541:d;}      // volume (gal)
+function uVL(l){return isM()?l:l*L2GAL;}                 function uVLi(d){return isM()?d:d/L2GAL;}       // volume stored in litres (urine)
+function uFl(g){return isM()?g*3.78541:g;}               function uFli(d){return isM()?d/3.78541:d;}     // flow (GPM)
+function uH(ft){return isM()?ft*0.3048:ft;}              function uHi(d){return isM()?d/0.3048:d;}       // head / large length (ft)
+function uL(inch){return isM()?inch*2.54:inch;}          function uLi(d){return isM()?d/2.54:d;}          // small length (in)
+function uRpl(rpi){return isM()?rpi/2.54:rpi;}           function uRpli(d){return isM()?d*2.54:d;}        // R per unit length
+function uA(ft2){return isM()?ft2*0.092903:ft2;}                                                          // area (ft²)
+// unit labels
+function uTu(){return isM()?'°C':'°F';}
+function uVu(){return isM()?'L':'gal';}
+function uFlu(){return isM()?'L/min':'GPM';}
+function uHu(){return isM()?'m':'ft';}
+function uLu(){return isM()?'cm':'in';}
+function uRplu(){return isM()?'R/cm':'R/in';}
+function uAu(){return isM()?'m²':'ft²';}
+// combined value+unit string helpers for prose/cards
+function nf(x,dec){return f(x,dec);}
+function T(fv,dec=0){return `${f(uT(fv),dec)}${uTu()}`;}
+function DT(fd,dec=0){return `${f(uDT(fd),dec)} ${isM()?'C°':'F°'}`;}
+function VOL(g,dec=1){return `${f(uV(g),dec)} ${uVu()}`;}
+function VOLL(l,dec=2){return `${f(uVL(l),dec)} ${uVu()}`;}
+function FLOW(g,dec=2){return `${f(uFl(g),dec)} ${uFlu()}`;}
+function HEAD(ft,dec=0){return `${f(uH(ft),dec)} ${uHu()}`;}
+function LEN(inch,dec=1){return `${f(uL(inch),dec)} ${uLu()}`;}
+function AREA(ft2,dec=1){return `${f(uA(ft2),dec)} ${uAu()}`;}
+// per-dimension input conversion map (used by renderInputs)
+const DIM = {
+  temp:{d:uT,i:uTi,u:uTu}, vol:{d:uV,i:uVi,u:uVu}, volL:{d:uVL,i:uVLi,u:uVu},
+  flow:{d:uFl,i:uFli,u:uFlu}, head:{d:uH,i:uHi,u:uHu}, len:{d:uL,i:uLi,u:uLu},
+  rpl:{d:uRpl,i:uRpli,u:uRplu},
+};
+function toggleUnits(){unitSys=isM()?'imperial':'metric';renderInputs();recalc();updUnitBtn();save();}
+function updUnitBtn(){const b=el('unit-toggle');if(b)b.innerHTML=`<i class="ti ti-arrows-exchange"></i> ${isM()?'Metric (SI)':'Imperial (US)'}`;}
 
 // ---- tabs ----
 function renderTabs(){
@@ -561,11 +607,15 @@ function showTab(id){activeTab=id;renderTabs();save();}
 function renderInputs(){
   for(const grp in FIELDS){
     let html='';
-    for(const [key,label,unit,step,help] of FIELDS[grp]){
+    for(const [key,label,unit,step,help,dim] of FIELDS[grp]){
       const tip = help?` <i class="ti ti-help-circle help" title="${help}"></i>`:'';
+      const c = dim?DIM[dim]:null;
+      const shownVal = c?parseFloat(c.d(S[key]).toFixed(2)):S[key];
+      const shownUnit = c?c.u():unit;
+      const handler = c?`updDim('${key}','${dim}',this.value)`:`upd('${key}',this.value)`;
       html+=`<div class="field"><div class="field-lbl">${label}${tip}</div>
-        <div class="field-input"><input type="number" step="${step}" value="${S[key]}" oninput="upd('${key}',this.value)">
-        <span class="unit">${unit}</span></div></div>`;
+        <div class="field-input"><input type="number" step="${step}" value="${shownVal}" oninput="${handler}">
+        <span class="unit">${shownUnit}</span></div></div>`;
     }
     setHTML(grp,html);
   }
@@ -584,12 +634,13 @@ function renderInputs(){
   renderCurveEditor();
 }
 function upd(key,val){S[key]=parseFloat(val);recalc();}
+function updDim(key,dim,val){S[key]=DIM[dim].i(parseFloat(val));recalc();}   // convert display -> stored
 function updStr(key,val){S[key]=val;renderInputs();recalc();}
 
 // ---- fixture table ----
 function renderFixtureTable(){
   let h=`<tr><th>Fixture</th>`+
-    `<th title="Flow rate of the fixture in gallons per minute.">GPM</th>`+
+    `<th title="Flow rate of the fixture (${uFlu()}).">${uFlu()}</th>`+
     `<th title="Effective water-on minutes per day for this fixture. For a military shower, enter the ~2 min actually flowing, not the 10 min in the stall.">min/day</th>`+
     `<th title="Share of this fixture's water drawn from the hot tank (rest is cold).">%hot</th>`+
     `<th title="Does this fixture drain to the grey tank? Hose bib (external) and composting toilet do not.">grey</th>`+
@@ -597,7 +648,7 @@ function renderFixtureTable(){
   fixtures.forEach((fx,i)=>{
     h+=`<tr>
       <td class="name"><input type="text" value="${fx.name}" oninput="updFix(${i},'name',this.value)"></td>
-      <td><input type="number" step="0.05" value="${fx.gpm}" oninput="updFix(${i},'gpm',this.value)"></td>
+      <td><input type="number" step="0.05" value="${f(uFl(fx.gpm),2)}" oninput="updFixFlow(${i},this.value)"></td>
       <td><input type="number" step="0.5" value="${fx.min}" oninput="updFix(${i},'min',this.value)"></td>
       <td><input type="number" step="5" value="${fx.pctHot}" oninput="updFix(${i},'pctHot',this.value)"></td>
       <td style="text-align:center"><input type="checkbox" ${fx.grey?'checked':''} onchange="updFix(${i},'grey',this.checked)"></td>
@@ -608,6 +659,7 @@ function renderFixtureTable(){
   setHTML('fixture-table',h);
 }
 function updFix(i,k,v){fixtures[i][k]=(k==='name')?v:(k==='grey'||k==='pp')?v:parseFloat(v);recalc();}
+function updFixFlow(i,v){fixtures[i].gpm=uFli(parseFloat(v));recalc();}   // flow input converts to stored GPM
 function addFixture(){fixtures.push({name:'New fixture',gpm:1.0,min:2,pctHot:0,grey:true,pp:true,dfu:1,trap:1.25,showerLike:false});renderFixtureTable();recalc();}
 function rmFixture(i){fixtures.splice(i,1);renderFixtureTable();recalc();}
 
@@ -616,15 +668,15 @@ function renderShowerHeadTable(){
   const dT=S.setpointF-S.inletF;
   const smin=showerFix().min;
   const hf=(S.showerMixF-S.inletF)/(S.setpointF-S.inletF);
-  let h=`<tr><th>Option</th><th>GPM</th><th>Hot/shower</th><th>Showers/tank</th><th>Reheat</th><th></th></tr>`;
+  let h=`<tr><th>Option</th><th>${uFlu()}</th><th>Hot/shower</th><th>Showers/tank</th><th>Reheat</th><th></th></tr>`;
   showerHeads.forEach((o,i)=>{
     const hotPer=o.gpm*smin*S.foI*hf;                        // hot gal per single shower (with FoI)
     const showers=hotPer>0?S.tankGal/hotPer:Infinity;
     const reheatMin=(heatWh(hotPer,dT)/S.elementW)*60;       // reheat one shower's worth
     h+=`<tr>
       <td class="name"><input type="text" value="${o.name}" oninput="updSH(${i},'name',this.value)"></td>
-      <td><input type="number" step="0.05" value="${o.gpm}" oninput="updSH(${i},'gpm',this.value)"></td>
-      <td>${f(hotPer,1)} gal</td>
+      <td><input type="number" step="0.05" value="${f(uFl(o.gpm),2)}" oninput="updSHflow(${i},this.value)"></td>
+      <td>${VOL(hotPer,1)}</td>
       <td>${isFinite(showers)?f(showers,1):'∞'}</td>
       <td>${f(reheatMin,0)} min</td>
       <td style="text-align:center;white-space:nowrap">
@@ -635,6 +687,7 @@ function renderShowerHeadTable(){
   setHTML('showerhead-table',h);
 }
 function updSH(i,k,v){showerHeads[i][k]=(k==='name')?v:parseFloat(v);renderShowerHeadTable();save();}
+function updSHflow(i,v){showerHeads[i].gpm=uFli(parseFloat(v));renderShowerHeadTable();save();}
 function addShowerHead(){showerHeads.push({name:'New option',gpm:1.5});renderShowerHeadTable();save();}
 function rmShowerHead(i){showerHeads.splice(i,1);renderShowerHeadTable();save();}
 function useShowerHead(i){
@@ -647,13 +700,15 @@ function renderCurveEditor(){
   let html='';
   pumpCurve.forEach((p,i)=>{
     html+=`<div class="pumprow">
-      <input type="number" step="0.25" value="${p.q}" oninput="updCurve(${i},'q',this.value)" placeholder="GPM">
-      <input type="number" step="1" value="${p.h}" oninput="updCurve(${i},'h',this.value)" placeholder="head ft">
+      <input type="number" step="0.25" value="${f(uFl(p.q),2)}" oninput="updCurveQ(${i},this.value)" placeholder="${uFlu()}">
+      <input type="number" step="1" value="${f(uH(p.h),1)}" oninput="updCurveH(${i},this.value)" placeholder="head ${uHu()}">
       <button class="btn tiny" onclick="rmCurve(${i})">✕</button></div>`;
   });
   setHTML('pump-curve-editor',html);
 }
 function updCurve(i,k,v){pumpCurve[i][k]=parseFloat(v);recalc();}
+function updCurveQ(i,v){pumpCurve[i].q=uFli(parseFloat(v));recalc();}
+function updCurveH(i,v){pumpCurve[i].h=uHi(parseFloat(v));recalc();}
 function addCurvePoint(){const l=pumpCurve[pumpCurve.length-1]||{q:0,h:0};pumpCurve.push({q:l.q+1,h:Math.max(0,l.h-10)});renderCurveEditor();recalc();}
 function rmCurve(i){if(pumpCurve.length>2){pumpCurve.splice(i,1);renderCurveEditor();recalc();}}
 
@@ -698,18 +753,18 @@ function recalc(){
   Object.assign(R,{totalFresh,hotDaily,greyDaily,peakFlow,freshTank,greyTank});
 
   setHTML('out-demand',
-    mcard('Total fresh','gal/day',f(totalFresh,1)) +
-    mcard('Hot water','gal/day',f(hotDaily,1)) +
-    mcard('Grey produced','gal/day',f(greyDaily,1)) +
-    mcard('Peak flow','GPM',f(peakFlow,2),peakIndoor>=hose?'2 fixtures on':'hose bib') +
-    mcard('Fresh tank','gal',f(freshTank,0),`${S.daysAutonomy}d + ${S.reservePct}% reserve`) +
-    mcard('Grey tank','gal',f(greyTank,0),`${S.daysAutonomy}d capture`)
+    mcard('Total fresh',uVu()+'/day',f(uV(totalFresh),1)) +
+    mcard('Hot water',uVu()+'/day',f(uV(hotDaily),1)) +
+    mcard('Grey produced',uVu()+'/day',f(uV(greyDaily),1)) +
+    mcard('Peak flow',uFlu(),f(uFl(peakFlow),2),peakIndoor>=hose?'2 fixtures on':'hose bib') +
+    mcard('Fresh tank',uVu(),f(uV(freshTank),0),`${S.daysAutonomy}d + ${S.reservePct}% reserve`) +
+    mcard('Grey tank',uVu(),f(uV(greyTank),0),`${S.daysAutonomy}d capture`)
   );
   setHTML('note-demand',
     `<div class="notice-title"><i class="ti ti-info-circle"></i>How this is figured</div>`+
-    `Each fixture = GPM × min/day × (occupancy if per-person). Summed: <b>${f(totalFresh,1)} gal/day fresh</b>, of which <b>${f(hotDaily,1)} gal</b> is hot. `+
-    `Grey (drained fixtures only) = <b>${f(greyDaily,1)} gal/day</b>; hose bib &amp; composting toilet add no grey. `+
-    `Fresh tank = ${f(totalFresh,1)} × ${S.daysAutonomy} days × (1+${S.reservePct}%) = <b>${f(freshTank,0)} gal</b>.`
+    `Each fixture = flow × min/day × (occupancy if per-person). Summed: <b>${VOL(totalFresh,1)}/day fresh</b>, of which <b>${VOL(hotDaily,1)}</b> is hot. `+
+    `Grey (drained fixtures only) = <b>${VOL(greyDaily,1)}/day</b>; hose bib &amp; composting toilet add no grey. `+
+    `Fresh tank = ${VOL(totalFresh,1)} × ${S.daysAutonomy} days × (1+${S.reservePct}%) = <b>${VOL(freshTank,0)}</b>.`
   );
 
   // ---------- HOT WATER (shared model — feeds energy budget + sub-tabs) ----------
@@ -761,16 +816,16 @@ function recalc(){
   const containerLabel=sep?'Urine container':'Leachate tank';
   Object.assign(R,{liquidGalDay,containerGal});
   setHTML('out-toilet',
-    mcard('Liquid produced','gal/day',f(liquidGalDay,2),`${f(R.occEq,1)} occ × ${f(S.urineLppd,1)} L`) +
-    mcard(containerLabel,'gal',f(containerGal,1),`${S.toiletEmptyDays}d between empties`) +
+    mcard('Liquid produced',uVu()+'/day',f(uV(liquidGalDay),2),`${f(R.occEq,1)} occ × ${VOLL(S.urineLppd,1)}`) +
+    mcard(containerLabel,uVu(),f(uV(containerGal),1),`${S.toiletEmptyDays}d between empties`) +
     mcard('Empties','/month',f(30/S.toiletEmptyDays,1)) +
-    mcard('Flush water','gal/day','0',`composting — none`)
+    mcard('Flush water',uVu()+'/day','0',`composting — none`)
   );
   setHTML('note-toilet',
     `<div class="notice-title"><i class="ti ti-info-circle"></i>${sep?'Urine separation':'Leachate tank'}</div>`+
     (sep
-      ? `All urine diverted at the seat: <b>${f(liquidGalDay,2)} gal/day</b> → a <b>${f(containerGal,1)} gal container</b> emptied every ${S.toiletEmptyDays} days. Solids compost dry, so the leachate fraction doesn't apply. Cleanest for odor and for keeping the compost aerobic.`
-      : `No separation: excess liquid drains as leachate — assumed <b>${S.leachateFrac}%</b> of urine volume (rest is absorbed/evaporated in the compost). That's <b>${f(liquidGalDay,2)} gal/day</b> → a <b>${f(containerGal,1)} gal leachate tank</b> emptied every ${S.toiletEmptyDays} days. Simpler seat, but needs a small tank and drainage.`)+
+      ? `All urine diverted at the seat: <b>${VOL(liquidGalDay,2)}/day</b> → a <b>${VOL(containerGal,1)} container</b> emptied every ${S.toiletEmptyDays} days. Solids compost dry, so the leachate fraction doesn't apply. Cleanest for odor and for keeping the compost aerobic.`
+      : `No separation: excess liquid drains as leachate — assumed <b>${S.leachateFrac}%</b> of urine volume (rest is absorbed/evaporated in the compost). That's <b>${VOL(liquidGalDay,2)}/day</b> → a <b>${VOL(containerGal,1)} leachate tank</b> emptied every ${S.toiletEmptyDays} days. Simpler seat, but needs a small tank and drainage.`)+
     ` Testing will pin down the real split — adjust "urine per person" and "leachate fraction" once you have data.`
   );
 
@@ -784,8 +839,8 @@ function recalc(){
   Object.assign(R,{pumpWhDay,pumpAmps,canMeetPeak,peakHead});
 
   setHTML('out-pump',
-    mcard('Operating point','GPM',f(op.q,2),`@ ${f(op.h,0)} ft`) +
-    mcard('Peak demand head','ft',f(peakHead,0),`at ${f(peakFlow,2)} GPM`) +
+    mcard('Operating point',uFlu(),f(uFl(op.q),2),`@ ${HEAD(op.h,0)}`) +
+    mcard('Peak demand head',uHu(),f(uH(peakHead),0),`at ${FLOW(peakFlow,2)}`) +
     mcard('Pump runtime','min/day',f(pumpRuntimeMin,0)) +
     mcard('Pump energy','Wh/day',f(pumpWhDay,0)) +
     mcard('Pump draw','A DC',f(pumpAmps,1),`${S.pumpRatedW}W ÷ ${S.busVoltage}V`)
@@ -808,7 +863,7 @@ function recalc(){
   );
   const over=waterWhDay>S.budgetWh||!canMeetPeak;
   let msg='';
-  if(!canMeetPeak)msg+=`<b>Pump undersized for peak:</b> at ${f(peakFlow,2)} GPM the system needs ${f(peakHead,0)} ft but the pump gives ${f(pumpHead(peakFlow),0)} ft. Raise the curve or avoid simultaneous use.<br>`;
+  if(!canMeetPeak)msg+=`<b>Pump undersized for peak:</b> at ${FLOW(peakFlow,2)} the system needs ${HEAD(peakHead,0)} but the pump gives ${HEAD(pumpHead(peakFlow),0)}. Raise the curve or avoid simultaneous use.<br>`;
   if(waterWhDay>S.budgetWh)msg+=`<b>Over water-energy budget by ${f(-headroom,0)} Wh/day.</b> Lower setpoint, add insulation, or raise the budget.`;
   if(!over)msg=`Water-system energy is <b>${f(waterWhDay,0)} Wh/day</b> vs a <b>${f(S.budgetWh,0)} Wh</b> budget — <b>${f(headroom,0)} Wh headroom</b> (${f(balancePct,0)}% used). Peak draw ${f(peakAmps,1)} A. Pump meets peak flow.`;
   const balanceHTML=`<div class="notice-title"><i class="ti ti-${over?'alert-triangle':'circle-check'}"></i>${over?'Needs attention':'Balanced'}</div>`+msg;
@@ -840,14 +895,14 @@ function recalc(){
 
   // ---------- SUMMARY (rollup) ----------
   setHTML('out-summary',
-    mcard('Fresh water','gal/day',f(R.totalFresh,1),`tank ${f(R.freshTank,0)} gal`,'hero') +
-    mcard('Hot water','gal/day',f(R.hotDaily,1),`${isFinite(R.consecShowers)?f(R.consecShowers,1):'∞'} showers/tank`) +
-    mcard('Grey water','gal/day',f(R.greyDaily,1),`tank ${f(R.greyTank,0)} gal`) +
+    mcard('Fresh water',uVu()+'/day',f(uV(R.totalFresh),1),`tank ${VOL(R.freshTank,0)}`,'hero') +
+    mcard('Hot water',uVu()+'/day',f(uV(R.hotDaily),1),`${isFinite(R.consecShowers)?f(R.consecShowers,1):'∞'} showers/tank`) +
+    mcard('Grey water',uVu()+'/day',f(uV(R.greyDaily),1),`tank ${VOL(R.greyTank,0)}`) +
     mcard('Water energy','Wh/day',f(R.waterWhDay,0),`${f(R.balancePct,0)}% of budget`,'hero') +
     mcard('Total load','Wh/day',f(R.totalLoadWh,0),'water + other') +
     mcard('Battery bank','kWh',f(R.bankWh/1000,2),`${f(R.bankAh,0)} Ah @ ${S.busVoltage}V`,'hero') +
     mcard('Peak current','A DC',f(R.peakAmps,1),'heater + pump') +
-    mcard('Toilet liquid','gal/day',f(R.liquidGalDay,2),S.toiletMode==='urine-sep'?'urine sep':'leachate')
+    mcard('Toilet liquid',uVu()+'/day',f(uV(R.liquidGalDay),2),S.toiletMode==='urine-sep'?'urine sep':'leachate')
   );
 
   // ---------- META ----------
@@ -891,9 +946,9 @@ function renderPumpChart(op){
     <path d="${pumpPath}" fill="none" stroke="var(--color-text-info)" stroke-width="2"/>
     <path d="${sysPath}" fill="none" stroke="var(--color-text-warning)" stroke-width="2" stroke-dasharray="5 4"/>
     <circle cx="${X(op.q)}" cy="${Y(op.h)}" r="5" fill="var(--color-text-success)"/>
-    <text x="${X(op.q)+8}" y="${Y(op.h)-8}" font-family="var(--font-mono)" font-size="12" fill="var(--color-text-primary)">${f(op.q,2)} GPM @ ${f(op.h,0)} ft</text>
-    <text x="${W-12}" y="${H-pad+22}" text-anchor="end" font-size="11" fill="var(--color-text-tertiary)">flow →  ${f(qmax,1)} GPM</text>
-    <text x="${pad-6}" y="${pad-6}" font-size="11" fill="var(--color-text-tertiary)">head (ft) ${f(hmax,0)}</text>
+    <text x="${X(op.q)+8}" y="${Y(op.h)-8}" font-family="var(--font-mono)" font-size="12" fill="var(--color-text-primary)">${FLOW(op.q,2)} @ ${HEAD(op.h,0)}</text>
+    <text x="${W-12}" y="${H-pad+22}" text-anchor="end" font-size="11" fill="var(--color-text-tertiary)">flow →  ${f(uFl(qmax),1)} ${uFlu()}</text>
+    <text x="${pad-6}" y="${pad-6}" font-size="11" fill="var(--color-text-tertiary)">head (${uHu()}) ${f(uH(hmax),0)}</text>
     <text x="${pad+8}" y="${pad+14}" font-size="11" fill="var(--color-text-info)">■ pump</text>
     <text x="${pad+64}" y="${pad+14}" font-size="11" fill="var(--color-text-warning)">▦ system</text>
   </svg>`);
@@ -912,11 +967,11 @@ function bankK(){return (R.bankWh||S.budgetWh||1)/1000;}       // usable bank kW
 function hwGeom(shape,gal){
   const Vw=gal*GALIN3;
   if(shape==='cube'){const a=Math.cbrt(Vw);
-    return {name:'Cube',sa:6*a*a,env:x=>(a+2*x)**3,bare:`${a.toFixed(1)}″ cube`};}
+    return {name:'Cube',sa:6*a*a,env:x=>(a+2*x)**3,bare:`${f(uL(a),1)}${uLu()} cube`};}
   if(shape==='slab'){const t=8,a=Math.sqrt(Vw/t);
-    return {name:'Low-profile',sa:2*a*a+4*a*t,env:x=>(a+2*x)**2*(t+2*x),bare:`${a.toFixed(1)}×${a.toFixed(1)}×${t}″`};}
+    return {name:'Low-profile',sa:2*a*a+4*a*t,env:x=>(a+2*x)**2*(t+2*x),bare:`${f(uL(a),1)}×${f(uL(a),1)}×${f(uL(t),1)}${uLu()}`};}
   const r=Math.cbrt(Vw/(3*Math.PI)),h=3*r;
-  return {name:'Cylinder',sa:2*Math.PI*r*r+2*Math.PI*r*h,env:x=>Math.PI*(r+x)**2*(h+2*x),bare:`${(2*r).toFixed(1)}″⌀ × ${h.toFixed(1)}″`};
+  return {name:'Cylinder',sa:2*Math.PI*r*r+2*Math.PI*r*h,env:x=>Math.PI*(r+x)**2*(h+2*x),bare:`${f(uL(2*r),1)}${uLu()}⌀ × ${f(uL(h),1)}${uLu()}`};
 }
 function postShowerTemp(){const hu=Math.min(R.hotNeed,S.tankGal);return ((S.tankGal-hu)*S.setpointF+hu*S.inletF)/S.tankGal;}
 
@@ -931,12 +986,12 @@ function hwSwitchTab(n){hwTab=n;renderHwTabs();save();}
 // ---- quick controls (mirror shared state) ----
 function buildGpmBtns(){
   const c=el('gpm-btns');if(!c)return;const g=showerFix().gpm;
-  c.innerHTML=[1.5,1.75,2.0].map(r=>`<button class="sel" onclick="setShowerGpm(${r})" style="${r===g?'background:#E1F5EE;color:#0F6E56;border-color:#0F6E56;':'color:var(--color-text-secondary);'}">${r} GPM</button>`).join('');
+  c.innerHTML=[1.5,1.75,2.0].map(r=>`<button class="sel" onclick="setShowerGpm(${r})" style="${r===g?'background:#E1F5EE;color:#0F6E56;border-color:#0F6E56;':'color:var(--color-text-secondary);'}">${f(uFl(r),2)} ${uFlu()}</button>`).join('');
 }
 function setShowerGpm(v){showerFix().gpm=v;renderFixtureTable();recalc();}
 function buildTempBtns(){
   const c=el('temp-btns');if(!c)return;
-  c.innerHTML=[120,130,140].map(t=>`<button class="sel" onclick="setSetpoint(${t})" style="${t===S.setpointF?'background:#FAEEDA;color:#633806;border-color:#BA7517;':'color:var(--color-text-secondary);'}">${t}°F</button>`).join('');
+  c.innerHTML=[120,130,140].map(t=>`<button class="sel" onclick="setSetpoint(${t})" style="${t===S.setpointF?'background:#FAEEDA;color:#633806;border-color:#BA7517;':'color:var(--color-text-secondary);'}">${T(t)}</button>`).join('');
 }
 function setSetpoint(v){S.setpointF=v;renderInputs();recalc();}
 function buildShapeBtns(){
@@ -951,27 +1006,27 @@ function renderHwSizing(){
   const gpp=shf.gpm*shf.min, gAll=gpp*R.occEq, head=S.tankGal-tn;
   const occLbl=`${R.occHead} ppl${S.children?` (${f(R.occEq,1)} water-eq)`:''}`;
   const steps=[
-    [`${shf.min} min × ${f(shf.gpm,2)} GPM`,`${f(gpp,1)} gal/person`,'effective water-on time'],
-    [`× ${occLbl}`,`${f(gAll,1)} gal`,'total mixed water (hot + cold)'],
-    [`× FoI ${f(S.foI,1)}×`,`${f(mix,1)} gal`,'design margin'],
-    [`× ${Math.round(hf*100)}% hot fraction`,`${f(tn,1)} gal`,`from ${S.setpointF}°F tank, mixed to ${S.showerMixF}°F`],
+    [`${shf.min} min × ${FLOW(shf.gpm,2)}`,`${VOL(gpp,1)}/person`,'effective water-on time'],
+    [`× ${occLbl}`,`${VOL(gAll,1)}`,'total mixed water (hot + cold)'],
+    [`× FoI ${f(S.foI,1)}×`,`${VOL(mix,1)}`,'design margin'],
+    [`× ${Math.round(hf*100)}% hot fraction`,`${VOL(tn,1)}`,`from ${T(S.setpointF)} tank, mixed to ${T(S.showerMixF)}`],
   ];
   setHTML('wf', steps.map((s,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:${i===3?'#E1F5EE':'var(--color-background-secondary)'};border-radius:7px;border:.5px solid ${i===3?'#9FE1CB':'transparent'};"><span style="color:var(--color-text-secondary);flex:1;font-size:13px;">${s[0]}</span><span style="font-weight:500;font-size:13px;color:${i===3?'#085041':'var(--color-text-primary)'};min-width:80px;text-align:right;font-family:var(--font-mono);">${s[1]}</span><span style="color:var(--color-text-secondary);font-size:11px;min-width:150px;text-align:right;">${s[2]}</span></div>`).join(''));
-  setHTML('m-hot',`${f(tn,1)} <span style="font-size:14px;font-weight:400;">gal</span>`);
-  setHTML('m-hot-note',`hot drawn @ ${S.setpointF}°F`);
+  setHTML('m-hot',`${f(uV(tn),1)} <span style="font-size:14px;font-weight:400;">${uVu()}</span>`);
+  setHTML('m-hot-note',`hot drawn @ ${T(S.setpointF)}`);
   setHTML('m-mult',`${f(1/hf,2)} <span style="font-size:14px;font-weight:400;">×</span>`);
-  setHTML('m-tank',`${f(head,1)} <span style="font-size:14px;font-weight:400;">gal</span>`);
-  setHTML('m-tank-note',`${S.tankGal}-gal tank − ${f(tn,1)} drawn`);
-  setHTML('m-post',`${Math.round(postShowerTemp())}°F`);
+  setHTML('m-tank',`${f(uV(head),1)} <span style="font-size:14px;font-weight:400;">${uVu()}</span>`);
+  setHTML('m-tank-note',`${VOL(S.tankGal,0)} tank − ${VOL(tn,1)} drawn`);
+  setHTML('m-post',`${T(postShowerTemp(),0)}`);
   setHTML('temp-table',[120,130,140].map(t=>{
     const h=(S.showerMixF-S.inletF)/(t-S.inletF);
     const nd=shf.gpm*shf.min*R.occEq*S.foI*h;
     const isSel=t===S.setpointF;
     const nc=nd<S.tankGal*0.8?'#0F6E56':nd<S.tankGal*1.1?'#BA7517':'#A32D2D';
-    return `<tr style="background:${isSel?'var(--color-background-secondary)':'transparent'};"><td style="font-weight:${isSel?'500':'400'};">${t}°F ${isSel?'<span style="background:#FAEEDA;color:#633806;font-size:10px;font-weight:500;padding:1px 6px;border-radius:4px;">selected</span>':''}</td><td style="color:var(--color-text-secondary);">${Math.round(h*100)}%</td><td style="font-family:var(--font-mono);">${f(1/h,2)}×</td><td style="color:${nc};font-weight:500;font-family:var(--font-mono);">${f(nd,1)} gal</td></tr>`;
+    return `<tr style="background:${isSel?'var(--color-background-secondary)':'transparent'};"><td style="font-weight:${isSel?'500':'400'};">${T(t)} ${isSel?'<span style="background:#FAEEDA;color:#633806;font-size:10px;font-weight:500;padding:1px 6px;border-radius:4px;">selected</span>':''}</td><td style="color:var(--color-text-secondary);">${Math.round(h*100)}%</td><td style="font-family:var(--font-mono);">${f(1/h,2)}×</td><td style="color:${nc};font-weight:500;font-family:var(--font-mono);">${VOL(nd,1)}</td></tr>`;
   }).join(''));
   const cover=tn<=S.tankGal;
-  setHTML('sizing-rec',`At current settings (${f(shf.gpm,2)} GPM · ${S.setpointF}°F · ${R.occHead} people), one shower session draws <b>${f(tn,1)} gal</b> of hot water from the ${S.tankGal}-gal tank — ${cover?`leaving <b>${f(head,1)} gal</b> headroom for dishes and hand-washing`:`<b>${f(-head,1)} gal short</b>; raise storage temp or tank size`}. The TMV stretches each stored gallon into <b>${f(1/hf,2)} gal</b> of usable ${S.showerMixF}°F shower water.`);
+  setHTML('sizing-rec',`At current settings (${FLOW(shf.gpm,2)} · ${T(S.setpointF)} · ${R.occHead} people), one shower session draws <b>${VOL(tn,1)}</b> of hot water from the ${VOL(S.tankGal,0)} tank — ${cover?`leaving <b>${VOL(head,1)}</b> headroom for dishes and hand-washing`:`<b>${VOL(-head,1)} short</b>; raise storage temp or tank size`}. The TMV stretches each stored ${isM()?'litre':'gallon'} into <b>${f(1/hf,2)}×</b> usable ${T(S.showerMixF)} shower water.`);
 }
 
 // ---- HW tab 1: heater comparison ----
@@ -988,7 +1043,7 @@ function renderHwHeater(){
   const pt=postShowerTemp();
   const psk=hwKwh(S.tankGal,pt,S.setpointF);
   const mx=hwMins(csk,1000);
-  setHTML('hdr-tt',`${S.setpointF}°F`); setHTML('hdr-pt',`${Math.round(pt)}°F`);
+  setHTML('hdr-tt',`${T(S.setpointF)}`); setHTML('hdr-pt',`${T(pt,0)}`);
   setHTML('hdr-el',`${S.elementW} W (${f(S.elementW/S.busVoltage,1)} A @ ${S.busVoltage} V)`);
   setHTML('heater-table',ht.map(h=>{
     const cm=hwMins(csk,h.w),pm=hwMins(psk,h.w),bp=Math.round(csk/bk*100),bw=Math.round(cm/mx*100);
@@ -1007,8 +1062,8 @@ function renderHwInsulation(){
     {label:'2.5" closed-cell foam',r:16},
     {label:'3" closed-cell + foil',r:22,rec:true},
   ];
-  setHTML('ins-area',`${f(area,1)} ft²`); setHTML('ins-tt',`${S.setpointF}°F`);
-  setHTML('ins-amb',`${S.ambientF}°F`); setHTML('ins-dt',`${dT}°F`);
+  setHTML('ins-area',`${AREA(area,1)}`); setHTML('ins-tt',`${T(S.setpointF)}`);
+  setHTML('ins-amb',`${T(S.ambientF)}`); setHTML('ins-dt',`${DT(dT)}`);
   const mxw=hwStandbyW(area,1,dT);
   setHTML('ins-table',ls.map(l=>{
     const w=hwStandbyW(area,l.r,dT),kd=w*24/1000,bp=Math.round(w/mxw*100);
@@ -1032,34 +1087,34 @@ function renderHwTradeoff(){
   s+=`<rect x="${mx(130)}" y="${PY1}" width="${mx(140)-mx(130)}" height="${PY0-PY1}" fill="#E1F5EE" opacity="0.55"/>`;
   [0,5,10,15,20,25].forEach(g=>{if(g>GMAX)return;const y=myG(g);
     s+=`<line x1="${PX0}" y1="${y}" x2="${PX1}" y2="${y}" style="stroke:var(--color-border-tertiary)" stroke-width="0.5"/>`;
-    s+=`<text x="${PX0-7}" y="${y+3.5}" text-anchor="end" font-size="10" style="fill:var(--color-text-tertiary)">${g}</text>`;});
+    s+=`<text x="${PX0-7}" y="${y+3.5}" text-anchor="end" font-size="10" style="fill:var(--color-text-tertiary)">${f(uV(g),0)}</text>`;});
   temps.forEach(t=>{
     s+=`<line x1="${mx(t)}" y1="${PY0}" x2="${mx(t)}" y2="${PY0+4}" style="stroke:var(--color-border-secondary)" stroke-width="0.5"/>`;
-    s+=`<text x="${mx(t)}" y="${PY0+17}" text-anchor="middle" font-size="10" style="fill:var(--color-text-secondary)">${t}°</text>`;});
+    s+=`<text x="${mx(t)}" y="${PY0+17}" text-anchor="middle" font-size="10" style="fill:var(--color-text-secondary)">${f(uT(t),0)}°</text>`;});
   s+=`<line x1="${PX0}" y1="${PY0}" x2="${PX1}" y2="${PY0}" style="stroke:var(--color-border-secondary)" stroke-width="0.75"/>`;
   s+=`<line x1="${mx(140)}" y1="${PY1}" x2="${mx(140)}" y2="${PY0}" stroke="#854F0B" stroke-width="1" stroke-dasharray="2 3" opacity="0.8"/>`;
-  s+=`<text x="${mx(140)+4}" y="${PY1+11}" font-size="9.5" style="fill:#854F0B" font-weight="500">140°F Legionella floor</text>`;
+  s+=`<text x="${mx(140)+4}" y="${PY1+11}" font-size="9.5" style="fill:#854F0B" font-weight="500">${T(140)} Legionella floor</text>`;
   if(mix<=GMAX){const yr=myG(mix);
     s+=`<line x1="${PX0}" y1="${yr}" x2="${PX1}" y2="${yr}" stroke="#185FA5" stroke-width="1.25" stroke-dasharray="5 3"/>`;
-    s+=`<text x="${PX1-3}" y="${yr-5}" text-anchor="end" font-size="9.5" style="fill:#185FA5" font-weight="500">your need ${f(mix,1)} gal</text>`;}
+    s+=`<text x="${PX1-3}" y="${yr-5}" text-anchor="end" font-size="9.5" style="fill:#185FA5" font-weight="500">your need ${VOL(mix,1)}</text>`;}
   s+=`<polyline points="${temps.map(t=>`${mx(t)},${myW(stand(t))}`).join(' ')}" fill="none" stroke="#A32D2D" stroke-width="2"/>`;
   temps.forEach(t=>{s+=`<circle cx="${mx(t)}" cy="${myW(stand(t))}" r="3" fill="#A32D2D"/>`;});
   s+=`<polyline points="${temps.map(t=>`${mx(t)},${myG(eff(t))}`).join(' ')}" fill="none" stroke="#0F6E56" stroke-width="2.5"/>`;
-  temps.forEach(t=>{s+=`<circle cx="${mx(t)}" cy="${myG(eff(t))}" r="3.5" fill="#0F6E56"/><text x="${mx(t)}" y="${myG(eff(t))-9}" text-anchor="middle" font-size="9.5" style="fill:#0F6E56" font-weight="600">${f(eff(t),1)}</text>`;});
+  temps.forEach(t=>{s+=`<circle cx="${mx(t)}" cy="${myG(eff(t))}" r="3.5" fill="#0F6E56"/><text x="${mx(t)}" y="${myG(eff(t))-9}" text-anchor="middle" font-size="9.5" style="fill:#0F6E56" font-weight="600">${f(uV(eff(t)),1)}</text>`;});
   if(S.setpointF>=TMIN&&S.setpointF<=TMAX){
     s+=`<line x1="${mx(S.setpointF)}" y1="${PY1}" x2="${mx(S.setpointF)}" y2="${PY0}" style="stroke:var(--color-text-tertiary)" stroke-width="1" stroke-dasharray="1 3"/>`;
-    s+=`<text x="${mx(S.setpointF)}" y="${PY1-6}" text-anchor="middle" font-size="9.5" style="fill:var(--color-text-secondary)" font-weight="600">selected ${S.setpointF}°</text>`;}
-  s+=`<text x="14" y="${(PY0+PY1)/2}" font-size="10" style="fill:#0F6E56" font-weight="600" transform="rotate(-90 14 ${(PY0+PY1)/2})" text-anchor="middle">usable gal (${SHOW}°F)</text>`;
+    s+=`<text x="${mx(S.setpointF)}" y="${PY1-6}" text-anchor="middle" font-size="9.5" style="fill:var(--color-text-secondary)" font-weight="600">selected ${f(uT(S.setpointF),0)}°</text>`;}
+  s+=`<text x="14" y="${(PY0+PY1)/2}" font-size="10" style="fill:#0F6E56" font-weight="600" transform="rotate(-90 14 ${(PY0+PY1)/2})" text-anchor="middle">usable ${uVu()} (${T(SHOW)})</text>`;
   s+=`<text x="${W-12}" y="${(PY0+PY1)/2}" font-size="10" style="fill:#A32D2D" font-weight="600" transform="rotate(90 ${W-12} ${(PY0+PY1)/2})" text-anchor="middle">standby loss (W)</text>`;
   s+=`<text x="${(PX0+PX1)/2}" y="${H-4}" text-anchor="middle" font-size="10" style="fill:var(--color-text-secondary)">storage temperature</text></svg>`;
   setHTML('tradeoff-chart',s);
   setHTML('tradeoff-table',temps.map(t=>{
     const e=eff(t),w=stand(t),kd=w*24/1000,pb=kd/bk*100,up=hwKwh(S.tankGal,COLD,t);
     const sweet=(t===130||t===140),isSel=t===S.setpointF;
-    return `<tr style="background:${sweet?'#E1F5EE':isSel?'var(--color-background-secondary)':'transparent'};"><td style="font-weight:${sweet?'500':'400'};color:${sweet?'#085041':'var(--color-text-primary)'};">${t}°F${t===140?' <span style="background:#E1F5EE;color:#085041;font-size:10px;font-weight:500;padding:1px 6px;border-radius:4px;">sweet spot</span>':''}</td><td style="font-family:var(--font-mono);font-weight:500;color:#0F6E56;">${f(e,1)} gal</td><td style="font-family:var(--font-mono);color:#A32D2D;">${w.toFixed(1)} W</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);">${kd.toFixed(3)}</td><td style="font-family:var(--font-mono);color:${pb>9?'#A32D2D':'var(--color-text-secondary)'};">${pb.toFixed(1)}%</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);">${up.toFixed(2)} kWh</td></tr>`;
+    return `<tr style="background:${sweet?'#E1F5EE':isSel?'var(--color-background-secondary)':'transparent'};"><td style="font-weight:${sweet?'500':'400'};color:${sweet?'#085041':'var(--color-text-primary)'};">${T(t)}${t===140?' <span style="background:#E1F5EE;color:#085041;font-size:10px;font-weight:500;padding:1px 6px;border-radius:4px;">sweet spot</span>':''}</td><td style="font-family:var(--font-mono);font-weight:500;color:#0F6E56;">${VOL(e,1)}</td><td style="font-family:var(--font-mono);color:#A32D2D;">${w.toFixed(1)} W</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);">${kd.toFixed(3)}</td><td style="font-family:var(--font-mono);color:${pb>9?'#A32D2D':'var(--color-text-secondary)'};">${pb.toFixed(1)}%</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);">${up.toFixed(2)} kWh</td></tr>`;
   }).join(''));
   const e140=eff(140),w140=stand(140);
-  setHTML('tradeoff-rec',`<b>Store at 140°F.</b> It's the lowest temperature that reliably kills <em>Legionella</em>, so it doubles as pasteurization — and still delivers <b>${f(e140,1)} usable gallons</b> from the ${S.tankGal}-gal tank (~${f(e140/Math.max(mix,0.1),1)}× your ${f(mix,1)} gal need) while bleeding only ${w140.toFixed(1)} W standby (~${(w140*24/1000/bk*100).toFixed(1)}% of the bank/day). Hotter buys linear capacity you don't need for higher standby and a scald hazard; cooler forfeits the kill margin and forces a bigger tank. Pair with dual-TMV + snap-disc fail-safes.`);
+  setHTML('tradeoff-rec',`<b>Store at ${T(140)}.</b> It's the lowest temperature that reliably kills <em>Legionella</em>, so it doubles as pasteurization — and still delivers <b>${VOL(e140,1)} usable</b> from the ${VOL(S.tankGal,0)} tank (~${f(e140/Math.max(mix,0.1),1)}× your ${VOL(mix,1)} need) while bleeding only ${w140.toFixed(1)} W standby (~${(w140*24/1000/bk*100).toFixed(1)}% of the bank/day). Hotter buys linear capacity you don't need for higher standby and a scald hazard; cooler forfeits the kill margin and forces a bigger tank. Pair with dual-TMV + snap-disc fail-safes.`);
 }
 
 // ---- HW tab 4: wall & shape (SVG) ----
@@ -1072,37 +1127,37 @@ function renderHwWall(){
   s+=`<rect x="${mx(2)}" y="${PY1}" width="${mx(3)-mx(2)}" height="${PY0-PY1}" fill="#E1F5EE" opacity="0.55"/>`;
   [0,15,30,45,60].forEach(e=>{if(e>EMAX)return;const y=myE(e);
     s+=`<line x1="${PX0}" y1="${y}" x2="${PX1}" y2="${y}" style="stroke:var(--color-border-tertiary)" stroke-width="0.5"/>`;
-    s+=`<text x="${PX0-7}" y="${y+3.5}" text-anchor="end" font-size="10" style="fill:var(--color-text-tertiary)">${e}</text>`;});
+    s+=`<text x="${PX0-7}" y="${y+3.5}" text-anchor="end" font-size="10" style="fill:var(--color-text-tertiary)">${f(uV(e),0)}</text>`;});
   [1,2,3,4,5].forEach(x=>{
     s+=`<line x1="${mx(x)}" y1="${PY0}" x2="${mx(x)}" y2="${PY0+4}" style="stroke:var(--color-border-secondary)" stroke-width="0.5"/>`;
-    s+=`<text x="${mx(x)}" y="${PY0+17}" text-anchor="middle" font-size="10" style="fill:var(--color-text-secondary)">${x}″</text>`;});
+    s+=`<text x="${mx(x)}" y="${PY0+17}" text-anchor="middle" font-size="10" style="fill:var(--color-text-secondary)">${f(uL(x),1)}</text>`;});
   s+=`<line x1="${PX0}" y1="${PY0}" x2="${PX1}" y2="${PY0}" style="stroke:var(--color-border-secondary)" stroke-width="0.75"/>`;
   s+=`<line x1="${PX0}" y1="${myE(S.tankGal)}" x2="${PX1}" y2="${myE(S.tankGal)}" stroke="#185FA5" stroke-width="1.25" stroke-dasharray="5 3"/>`;
-  s+=`<text x="${PX0+4}" y="${myE(S.tankGal)-5}" font-size="9.5" style="fill:#185FA5" font-weight="500">${S.tankGal} gal water payload</text>`;
+  s+=`<text x="${PX0+4}" y="${myE(S.tankGal)-5}" font-size="9.5" style="fill:#185FA5" font-weight="500">${VOL(S.tankGal,0)} water payload</text>`;
   const pts=[];for(let x=XMIN;x<=XMAX+1e-9;x+=0.2)pts.push(x);
   s+=`<polyline points="${pts.map(x=>`${mx(x)},${myW(hwWloss(g.sa,x,dT))}`).join(' ')}" fill="none" stroke="#A32D2D" stroke-width="2"/>`;
   s+=`<polyline points="${pts.map(x=>`${mx(x)},${myE(g.env(x)/GALIN3)}`).join(' ')}" fill="none" stroke="#0F6E56" stroke-width="2.5"/>`;
   [1,2,3,4,5].forEach(x=>{s+=`<circle cx="${mx(x)}" cy="${myE(g.env(x)/GALIN3)}" r="3" fill="#0F6E56"/><circle cx="${mx(x)}" cy="${myW(hwWloss(g.sa,x,dT))}" r="2.5" fill="#A32D2D"/>`;});
   s+=`<line x1="${mx(3)}" y1="${PY1}" x2="${mx(3)}" y2="${PY0}" style="stroke:var(--color-text-tertiary)" stroke-width="1" stroke-dasharray="1 3"/>`;
-  s+=`<text x="14" y="${(PY0+PY1)/2}" font-size="10" style="fill:#0F6E56" font-weight="600" transform="rotate(-90 14 ${(PY0+PY1)/2})" text-anchor="middle">envelope volume (gal)</text>`;
+  s+=`<text x="14" y="${(PY0+PY1)/2}" font-size="10" style="fill:#0F6E56" font-weight="600" transform="rotate(-90 14 ${(PY0+PY1)/2})" text-anchor="middle">envelope volume (${uVu()})</text>`;
   s+=`<text x="${W-12}" y="${(PY0+PY1)/2}" font-size="10" style="fill:#A32D2D" font-weight="600" transform="rotate(90 ${W-12} ${(PY0+PY1)/2})" text-anchor="middle">standby loss (W)</text>`;
-  s+=`<text x="${(PX0+PX1)/2}" y="${H-4}" text-anchor="middle" font-size="10" style="fill:var(--color-text-secondary)">insulation thickness</text></svg>`;
+  s+=`<text x="${(PX0+PX1)/2}" y="${H-4}" text-anchor="middle" font-size="10" style="fill:var(--color-text-secondary)">insulation thickness (${uLu()})</text></svg>`;
   setHTML('wall-chart',s);
   const w2=hwWloss(g.sa,2,dT),w3=hwWloss(g.sa,3,dT),w4=hwWloss(g.sa,4,dT);
   const e2=g.env(2)/GALIN3,e3=g.env(3)/GALIN3,e4=g.env(4)/GALIN3;
-  setHTML('wall-dr',`<b>Where it stops paying off:</b> 2″→3″ saves only ${(w2-w3).toFixed(1)} W but adds ${f(e3-e2,1)} gal of box; 3″→4″ saves a mere ${(w3-w4).toFixed(1)} W for another ${f(e4-e3,1)} gal. Each inch past 3″ buys fractions of a watt for several gallons of bulk.`);
+  setHTML('wall-dr',`<b>Where it stops paying off:</b> ${LEN(2,0)}→${LEN(3,0)} saves only ${(w2-w3).toFixed(1)} W but adds ${VOL(e3-e2,1)} of box; ${LEN(3,0)}→${LEN(4,0)} saves a mere ${(w3-w4).toFixed(1)} W for another ${VOL(e4-e3,1)}. Each ${isM()?'cm':'inch'} past ${LEN(3,0)} buys fractions of a watt for a lot of bulk.`);
   let prevW=null,prevE=null;
   setHTML('wall-table',[1,1.5,2,2.5,3,3.5,4,5].map(x=>{
     const w=hwWloss(g.sa,x,dT),e=g.env(x)/GALIN3;
-    const sv=prevW===null?'—':`${(prevW-w).toFixed(1)} W`, ad=prevE===null?'—':`+${f(e-prevE,1)} gal`;
+    const sv=prevW===null?'—':`${(prevW-w).toFixed(1)} W`, ad=prevE===null?'—':`+${VOL(e-prevE,1)}`;
     const band=(x===2||x===2.5||x===3);prevW=w;prevE=e;
-    return `<tr style="background:${band?'#E1F5EE':'transparent'};"><td style="font-weight:${band?'500':'400'};color:${band?'#085041':'var(--color-text-primary)'};">${x}″</td><td style="color:var(--color-text-secondary);">R-${(S.insulRperIn*x).toFixed(0)}</td><td style="font-family:var(--font-mono);color:#A32D2D;">${w.toFixed(1)} W</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);">${sv}</td><td style="font-family:var(--font-mono);color:#0F6E56;font-weight:500;">${f(e,1)} gal</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);">${ad}</td></tr>`;
+    return `<tr style="background:${band?'#E1F5EE':'transparent'};"><td style="font-weight:${band?'500':'400'};color:${band?'#085041':'var(--color-text-primary)'};">${LEN(x,1)}</td><td style="color:var(--color-text-secondary);">R-${(S.insulRperIn*x).toFixed(0)}</td><td style="font-family:var(--font-mono);color:#A32D2D;">${w.toFixed(1)} W</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);">${sv}</td><td style="font-family:var(--font-mono);color:#0F6E56;font-weight:500;">${VOL(e,1)}</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);">${ad}</td></tr>`;
   }).join(''));
   setHTML('shape-table',['cyl','cube','slab'].map(k=>{
     const gg=hwGeom(k,S.tankGal),sel=k===S.tankShape,w=hwWloss(gg.sa,3,dT),e=gg.env(3)/GALIN3;
-    return `<tr style="background:${sel?'#E6F1FB':'transparent'};"><td style="font-weight:${sel?'500':'400'};color:${sel?'#185FA5':'var(--color-text-primary)'};">${gg.name}${sel?' <span style="background:#E6F1FB;color:#185FA5;font-size:10px;font-weight:500;padding:1px 6px;border-radius:4px;">selected</span>':''}</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);font-size:12px;">${gg.bare}</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);">${(gg.sa/144).toFixed(2)} ft²</td><td style="font-family:var(--font-mono);color:#A32D2D;">${w.toFixed(1)} W</td><td style="font-family:var(--font-mono);color:#0F6E56;">${f(e,1)} gal</td></tr>`;
+    return `<tr style="background:${sel?'#E6F1FB':'transparent'};"><td style="font-weight:${sel?'500':'400'};color:${sel?'#185FA5':'var(--color-text-primary)'};">${gg.name}${sel?' <span style="background:#E6F1FB;color:#185FA5;font-size:10px;font-weight:500;padding:1px 6px;border-radius:4px;">selected</span>':''}</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);font-size:12px;">${gg.bare}</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);">${AREA(gg.sa/144,2)}</td><td style="font-family:var(--font-mono);color:#A32D2D;">${w.toFixed(1)} W</td><td style="font-family:var(--font-mono);color:#0F6E56;">${VOL(e,1)}</td></tr>`;
   }).join(''));
-  setHTML('wall-rec',`Treat foam as expensive packaging and water as free payload. Insulation past <b>~3″ (R-${(S.insulRperIn*3).toFixed(0)})</b> is almost pure bulk — single-digit watts of return for gallons of box. If space is tight, a bigger tank with thinner foam can be a smaller overall package than a small tank with thick foam, holds more water, and costs only a few more watts. Choose the <b>${g.name.toLowerCase()}</b> only if it fits your cavity; the cylinder is the thermal/volume optimum, the slab is the fit-a-flat-space option. Insulate the plumbing stubs too — a bare 1″ fitting can leak as much as a square foot of tank wall.`);
+  setHTML('wall-rec',`Treat foam as expensive packaging and water as free payload. Insulation past <b>~${LEN(3,0)} (R-${(S.insulRperIn*3).toFixed(0)})</b> is almost pure bulk — single-digit watts of return for a lot of box. If space is tight, a bigger tank with thinner foam can be a smaller overall package than a small tank with thick foam, holds more water, and costs only a few more watts. Choose the <b>${g.name.toLowerCase()}</b> only if it fits your cavity; the cylinder is the thermal/volume optimum, the slab is the fit-a-flat-space option. Insulate the plumbing stubs too — a bare fitting can leak as much as a sizeable patch of tank wall.`);
 }
 
 // ---- persistence: auto-save inputs to this browser, restore on load ----
@@ -1113,7 +1168,7 @@ let booted = false;
 function setStatus(msg,icon){ setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`); }
 function save(){
   try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({v:3, S, fixtures, showerHeads, pumpCurve, activeTab, hwTab}));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({v:4, S, fixtures, showerHeads, pumpCurve, activeTab, hwTab, unitSys}));
     if(booted) setStatus('Auto-saved','check');
   }catch(e){ /* private mode / storage disabled — run without persistence */ }
 }
@@ -1128,6 +1183,7 @@ function load(){
     if(d && Array.isArray(d.pumpCurve)) pumpCurve = d.pumpCurve;
     if(d && d.activeTab) activeTab = d.activeTab;
     if(d && typeof d.hwTab==='number') hwTab = d.hwTab;
+    if(d && (d.unitSys==='metric'||d.unitSys==='imperial')) unitSys = d.unitSys;
     return true;
   }catch(e){ return false; }
 }
@@ -1151,6 +1207,7 @@ const DEFAULTS = {
 };
 
 const restored = load();
+updUnitBtn();
 renderTabs();
 renderHwTabs();
 renderInputs();
