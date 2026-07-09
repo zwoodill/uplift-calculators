@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Micro-Home Water Systems Planner</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
+<style>
+:root{
+  --color-background-primary:#ffffff;
+  --color-background-secondary:#f5f5f2;
+  --color-background-tertiary:#eeede8;
+  --color-background-info:#e6f1fb;
+  --color-background-danger:#fcebeb;
+  --color-background-success:#eaf3de;
+  --color-background-warning:#faeeda;
+  --color-text-primary:#1a1a18;
+  --color-text-secondary:#5f5e5a;
+  --color-text-tertiary:#888780;
+  --color-text-info:#185fa5;
+  --color-text-danger:#a32d2d;
+  --color-text-success:#3b6d11;
+  --color-text-warning:#854f0b;
+  --color-border-tertiary:rgba(0,0,0,0.12);
+  --color-border-secondary:rgba(0,0,0,0.22);
+  --color-border-primary:rgba(0,0,0,0.32);
+  --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  --font-mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+  --border-radius-md:8px;
+  --border-radius-lg:12px;
+  --border-radius-xl:16px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --color-background-primary:#1e1e1c;
+    --color-background-secondary:#2a2a27;
+    --color-background-tertiary:#141412;
+    --color-background-info:#0c2e52;
+    --color-background-danger:#3a1010;
+    --color-background-success:#122308;
+    --color-background-warning:#2e1d06;
+    --color-text-primary:#e8e6de;
+    --color-text-secondary:#a0a096;
+    --color-text-tertiary:#6e6d69;
+    --color-text-info:#85b7eb;
+    --color-text-danger:#f09595;
+    --color-text-success:#97c459;
+    --color-text-warning:#ef9f27;
+    --color-border-tertiary:rgba(255,255,255,0.12);
+    --color-border-secondary:rgba(255,255,255,0.22);
+    --color-border-primary:rgba(255,255,255,0.32);
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font-sans);font-size:16px;line-height:1.7;
+  color:var(--color-text-primary);background:var(--color-background-tertiary);padding:2rem 1rem;}
+.page-wrapper{max-width:760px;margin:0 auto;}
+h1{font-size:22px;font-weight:500;margin:0 0 4px;}
+.subtitle{color:var(--color-text-secondary);font-size:14px;margin:0 0 10px;}
+.part-chip{display:inline-block;font-size:10px;text-transform:uppercase;letter-spacing:.08em;
+  font-weight:600;color:var(--color-text-info);background:var(--color-background-info);
+  border-radius:999px;padding:3px 9px;margin-bottom:16px;}
+.card{background:var(--color-background-primary);border-radius:var(--border-radius-lg);
+  border:.5px solid var(--color-border-tertiary);padding:14px 18px;margin-bottom:12px;}
+.section-title{font-size:13px;font-weight:500;margin:0 0 10px;display:flex;align-items:center;gap:7px;}
+.section-title .ti{font-size:16px;color:var(--color-text-secondary);}
+.meta-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px;}
+.meta-item{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px 12px;}
+.meta-label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-tertiary);}
+.meta-val{font-family:var(--font-mono);font-size:15px;color:var(--color-text-primary);}
+.info-bar{font-size:12.5px;color:var(--color-text-secondary);background:var(--color-background-secondary);
+  border-radius:var(--border-radius-md);padding:9px 12px;margin-bottom:12px;}
+.field{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:6px 0;border-bottom:.5px solid var(--color-border-tertiary);}
+.field:last-child{border-bottom:none;}
+.field-lbl{font-size:13px;color:var(--color-text-primary);}
+.field-input{display:flex;align-items:center;gap:6px;}
+.field-input input,.field-input select{font-family:var(--font-mono);font-size:14px;
+  width:88px;text-align:right;padding:5px 8px;border-radius:6px;
+  border:.5px solid var(--color-border-secondary);background:var(--color-background-primary);
+  color:var(--color-text-primary);}
+.field-input .unit{font-size:11px;color:var(--color-text-tertiary);width:52px;}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;}
+.mcard{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px 14px;}
+.mcard-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-secondary);}
+.mcard-val{font-family:var(--font-mono);font-size:22px;font-weight:500;color:var(--color-text-primary);line-height:1.25;}
+.mcard-sub{font-size:11px;color:var(--color-text-secondary);}
+.notice{border-radius:var(--border-radius-lg);padding:12px 16px;margin-bottom:12px;font-size:13px;}
+.notice-title{font-weight:600;margin-bottom:3px;display:flex;align-items:center;gap:6px;}
+.notice.teal{background:#E1F5EE;border:.5px solid #9FE1CB;color:#0F6E56;}
+.notice.teal .notice-title{color:#085041;}
+.notice.amber{background:#FAEEDA;border:.5px solid #FAC775;color:#412402;}
+.notice.amber .notice-title{color:#854F0B;}
+@media (prefers-color-scheme:dark){
+  .notice.teal{background:#04342C;border-color:#085041;color:#8fd9c2;}
+  .notice.teal .notice-title{color:#3fbf9e;}
+  .notice.amber{background:#2e1d06;border-color:#854F0B;color:#ef9f27;}
+  .notice.amber .notice-title{color:#ef9f27;}
+}
+/* tables */
+table.tbl{width:100%;border-collapse:collapse;font-size:12.5px;}
+table.tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--color-text-tertiary);
+  text-align:right;padding:4px 6px;font-weight:600;border-bottom:.5px solid var(--color-border-secondary);}
+table.tbl th:first-child,table.tbl td:first-child{text-align:left;}
+table.tbl td{padding:4px 6px;border-bottom:.5px solid var(--color-border-tertiary);font-family:var(--font-mono);}
+table.tbl td.name{font-family:var(--font-sans);}
+table.tbl input[type=number]{font-family:var(--font-mono);font-size:12.5px;width:58px;text-align:right;
+  padding:4px 6px;border-radius:5px;border:.5px solid var(--color-border-secondary);
+  background:var(--color-background-primary);color:var(--color-text-primary);}
+table.tbl input[type=text]{font-family:var(--font-sans);font-size:12.5px;width:104px;
+  padding:4px 6px;border-radius:5px;border:.5px solid var(--color-border-secondary);
+  background:var(--color-background-primary);color:var(--color-text-primary);}
+.tblwrap{overflow-x:auto;}
+.btn{font-size:12px;font-family:var(--font-sans);padding:5px 10px;border-radius:6px;cursor:pointer;
+  border:.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary);}
+.pumprow{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;margin-bottom:6px;}
+.pumprow input{font-family:var(--font-mono);font-size:13px;padding:5px 8px;border-radius:6px;
+  border:.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);width:100%;}
+.footnote{font-size:11px;color:var(--color-text-tertiary);margin-top:6px;}
+svg{display:block;max-width:100%;height:auto;}
+</style>
+</head>
+<body>
+<div class="page-wrapper">
+
+  <h1>Micro-Home Water Systems Planner</h1>
+  <p class="subtitle">Fixture-driven water demand, hot-water capacity, grey drainage, and off-grid DC power balance.</p>
+  <span class="part-chip">Water Systems · Off-grid</span>
+
+  <div class="meta-bar" id="meta-bar"></div>
+
+  <div class="info-bar">
+    Off-grid: fixtures fed by an on-board pump from a fresh-water tank. Composting toilet — no flush water, no black water.
+    Every value is an editable assumption. <b>Enter shower "min/day" as effective water-on time</b> (a 10-min military shower ≈ 2 min flowing).
+    Change a flowrate and every downstream number updates — use this to validate shower-head options.
+  </div>
+
+  <!-- SYSTEM -->
+  <div class="card">
+    <div class="section-title"><i class="ti ti-adjustments"></i>System &amp; occupancy</div>
+    <div id="grp-system"></div>
+  </div>
+
+  <!-- FIXTURES -->
+  <div class="card">
+    <div class="section-title"><i class="ti ti-faucet"></i>Fixtures</div>
+    <div class="tblwrap"><table class="tbl" id="fixture-table"></table></div>
+    <div style="margin-top:8px;"><button class="btn" onclick="addFixture()">+ add fixture</button></div>
+    <div class="footnote">GPM = flowrate · min/day = effective water-on time · %hot = share drawn from hot tank · grey = drains to grey tank · /person = usage scales with occupancy.</div>
+  </div>
+
+  <!-- DEMAND OUTPUTS -->
+  <div class="card">
+    <div class="section-title"><i class="ti ti-chart-bar"></i>Water demand &amp; tanks</div>
+    <div class="metric-grid" id="out-demand"></div>
+  </div>
+  <div class="notice teal" id="note-demand"></div>
+
+  <!-- HOT WATER -->
+  <div class="card">
+    <div class="section-title"><i class="ti ti-flame"></i>Hot water</div>
+    <div id="grp-hot"></div>
+  </div>
+  <div class="card">
+    <div class="metric-grid" id="out-hot"></div>
+  </div>
+  <div class="notice teal" id="note-hot"></div>
+
+  <!-- DRAINAGE -->
+  <div class="card">
+    <div class="section-title"><i class="ti ti-pipe"></i>Grey drainage (DWV)</div>
+    <div class="tblwrap"><table class="tbl" id="drain-table"></table></div>
+    <div class="metric-grid" id="out-drain" style="margin-top:12px;"></div>
+  </div>
+  <div class="notice teal" id="note-drain"></div>
+
+  <!-- PUMP -->
+  <div class="card">
+    <div class="section-title"><i class="ti ti-engine"></i>Pump &amp; system curve</div>
+    <div id="grp-pump"></div>
+    <div style="margin-top:12px;font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;">Pump curve — flow (GPM) vs head (ft). Editable operating points:</div>
+    <div id="pump-curve-editor"></div>
+    <button class="btn" onclick="addCurvePoint()">+ add point</button>
+    <div style="margin-top:14px;" id="pump-chart"></div>
+    <div class="metric-grid" id="out-pump" style="margin-top:12px;"></div>
+  </div>
+
+  <!-- POWER BUDGET -->
+  <div class="card">
+    <div class="section-title"><i class="ti ti-bolt"></i>DC power balance</div>
+    <div class="metric-grid" id="out-power"></div>
+  </div>
+  <div class="notice" id="note-power"></div>
+
+  <p class="footnote">Part of the Uplift micro-home planning tools. Self-contained; values reset on reload. Deploy target: <code>uplift-calculators</code> → GitHub Pages → Confluence iframe.</p>
+
+</div>
+
+<script>
+// ============================================================================
+// CONFIG / STATE  — every value is a user-editable default.
+// Defaults from SN-series design + this build: composting toilet (no flush water),
+// 2 sinks + 1 military shower + hose bib, 48V DC bus, 10-gal hot tank / 3" insul.
+// ============================================================================
+const S = {
+  busVoltage:48, occupancy:2, daysAutonomy:3, reservePct:15, budgetWh:4500,
+  // hot water
+  inletF:55, setpointF:120, tankGal:10, elementW:1200,
+  insulRperIn:5, insulIn:3, ambientF:68, usableHotPct:80,
+  // pump
+  pumpRatedW:120, staticLiftFt:8, frictionK:2.5,
+};
+
+// fixtures: gpm=flowrate, min=effective water-on min/day, pctHot=% from hot tank,
+// grey=drains to grey tank, pp=usage scales per person, dfu=drainage fixture units, trap=trap size in.
+let fixtures = [
+  {name:'Kitchen sink',  gpm:1.5,  min:5, pctHot:60, grey:true,  pp:true,  dfu:2, trap:1.5,  showerLike:false},
+  {name:'Bathroom sink', gpm:1.2,  min:4, pctHot:50, grey:true,  pp:true,  dfu:1, trap:1.25, showerLike:false},
+  {name:'Shower',        gpm:1.75, min:2, pctHot:77, grey:true,  pp:true,  dfu:2, trap:2.0,  showerLike:true},
+  {name:'Hose bib',      gpm:3.0,  min:2, pctHot:0,  grey:false, pp:false, dfu:0, trap:0,    showerLike:false},
+];
+
+let pumpCurve = [ {q:0,h:70},{q:1,h:62},{q:2,h:50},{q:3,h:34},{q:4,h:14} ];
+
+const FIELDS = {
+  'grp-system':[
+    ['busVoltage','DC bus voltage','V',1],
+    ['occupancy','Occupancy','people',1],
+    ['daysAutonomy','Days of autonomy','days',0.5],
+    ['reservePct','Tank reserve','%',5],
+    ['budgetWh','DC energy budget','Wh/day',100],
+  ],
+  'grp-hot':[
+    ['inletF','Cold inlet temp','°F',1],
+    ['setpointF','Tank setpoint','°F',1],
+    ['tankGal','Hot tank size','gal',0.5],
+    ['elementW','DC heater power','W',50],
+    ['insulRperIn','Insulation R / inch','R/in',0.5],
+    ['insulIn','Insulation thickness','in',0.25],
+    ['ambientF','Cabin ambient temp','°F',1],
+    ['usableHotPct','Usable hot draw','%',5],
+  ],
+  'grp-pump':[
+    ['pumpRatedW','Pump power at duty','W',10],
+    ['staticLiftFt','Static lift','ft',0.5],
+    ['frictionK','Friction coeff K','ft/GPM²',0.1],
+  ],
+};
+
+// ---- helpers ----
+function el(id){return document.getElementById(id);}
+function setHTML(id,html){const e=el(id);if(e)e.innerHTML=html;}
+function f(v,dec){if(!isFinite(v))return '—';return Number(v).toLocaleString(undefined,{minimumFractionDigits:dec,maximumFractionDigits:dec});}
+function heatWh(gal,dT){return 8.34*gal*dT/3.412;} // BTU to heat water / 3.412 = Wh
+function fixGal(fx){return fx.gpm*fx.min*(fx.pp?S.occupancy:1);} // gal/day
+
+// ---- render simple field groups ----
+function renderInputs(){
+  for(const grp in FIELDS){
+    let html='';
+    for(const [key,label,unit,step] of FIELDS[grp]){
+      html+=`<div class="field"><div class="field-lbl">${label}</div>
+        <div class="field-input"><input type="number" step="${step}" value="${S[key]}" oninput="upd('${key}',this.value)">
+        <span class="unit">${unit}</span></div></div>`;
+    }
+    setHTML(grp,html);
+  }
+  renderFixtureTable();
+  renderCurveEditor();
+}
+function upd(key,val){S[key]=parseFloat(val);recalc();}
+
+// ---- fixture table ----
+function renderFixtureTable(){
+  let h=`<tr><th>Fixture</th><th>GPM</th><th>min/day</th><th>%hot</th><th>grey</th><th>/person</th><th></th></tr>`;
+  fixtures.forEach((fx,i)=>{
+    h+=`<tr>
+      <td class="name"><input type="text" value="${fx.name}" oninput="updFix(${i},'name',this.value)"></td>
+      <td><input type="number" step="0.05" value="${fx.gpm}" oninput="updFix(${i},'gpm',this.value)"></td>
+      <td><input type="number" step="0.5" value="${fx.min}" oninput="updFix(${i},'min',this.value)"></td>
+      <td><input type="number" step="5" value="${fx.pctHot}" oninput="updFix(${i},'pctHot',this.value)"></td>
+      <td style="text-align:center"><input type="checkbox" ${fx.grey?'checked':''} onchange="updFix(${i},'grey',this.checked)"></td>
+      <td style="text-align:center"><input type="checkbox" ${fx.pp?'checked':''} onchange="updFix(${i},'pp',this.checked)"></td>
+      <td style="text-align:center"><button class="btn" onclick="rmFixture(${i})">✕</button></td>
+    </tr>`;
+  });
+  setHTML('fixture-table',h);
+}
+function updFix(i,k,v){fixtures[i][k]=(k==='name')?v:(k==='grey'||k==='pp')?v:parseFloat(v);recalc();}
+function addFixture(){fixtures.push({name:'New fixture',gpm:1.0,min:2,pctHot:0,grey:true,pp:true,dfu:1,trap:1.25,showerLike:false});renderFixtureTable();recalc();}
+function rmFixture(i){fixtures.splice(i,1);renderFixtureTable();recalc();}
+
+// ---- pump curve editor ----
+function renderCurveEditor(){
+  let html='';
+  pumpCurve.forEach((p,i)=>{
+    html+=`<div class="pumprow">
+      <input type="number" step="0.25" value="${p.q}" oninput="updCurve(${i},'q',this.value)" placeholder="GPM">
+      <input type="number" step="1" value="${p.h}" oninput="updCurve(${i},'h',this.value)" placeholder="head ft">
+      <button class="btn" onclick="rmCurve(${i})">✕</button></div>`;
+  });
+  setHTML('pump-curve-editor',html);
+}
+function updCurve(i,k,v){pumpCurve[i][k]=parseFloat(v);recalc();}
+function addCurvePoint(){const l=pumpCurve[pumpCurve.length-1]||{q:0,h:0};pumpCurve.push({q:l.q+1,h:Math.max(0,l.h-10)});renderCurveEditor();recalc();}
+function rmCurve(i){if(pumpCurve.length>2){pumpCurve.splice(i,1);renderCurveEditor();recalc();}}
+
+// ---- pump / system curve ----
+function pumpHead(q){
+  const c=[...pumpCurve].sort((a,b)=>a.q-b.q);
+  if(q<=c[0].q)return c[0].h;
+  if(q>=c[c.length-1].q)return c[c.length-1].h;
+  for(let i=0;i<c.length-1;i++)if(q>=c[i].q&&q<=c[i+1].q){
+    const t=(q-c[i].q)/(c[i+1].q-c[i].q);return c[i].h+t*(c[i+1].h-c[i].h);}
+  return 0;
+}
+function sysHead(q){return S.staticLiftFt+S.frictionK*q*q;}
+function operatingPoint(){
+  const qmax=[...pumpCurve].sort((a,b)=>b.q-a.q)[0].q;
+  let prev=pumpHead(0)-sysHead(0);
+  for(let x=0.02;x<=qmax;x+=0.02){
+    const d=pumpHead(x)-sysHead(x);
+    if(prev>=0&&d<0){const t=prev/(prev-d);const q=(x-0.02)+t*0.02;return {q,h:sysHead(q)};}
+    prev=d;
+  }
+  return {q:qmax,h:sysHead(qmax)};
+}
+
+// ---- main recalc ----
+function recalc(){
+  // DEMAND
+  let totalFresh=0,hotDaily=0,greyDaily=0;
+  fixtures.forEach(fx=>{const g=fixGal(fx);totalFresh+=g;hotDaily+=g*fx.pctHot/100;if(fx.grey)greyDaily+=g;});
+  // peak flow: two largest indoor (grey) fixtures simultaneously, vs hose bib alone
+  const indoor=fixtures.filter(fx=>fx.grey).map(fx=>fx.gpm).sort((a,b)=>b-a);
+  const peakIndoor=(indoor[0]||0)+(indoor[1]||0);
+  const hose=Math.max(0,...fixtures.filter(fx=>!fx.grey).map(fx=>fx.gpm));
+  const peakFlow=Math.max(peakIndoor,hose);
+  const freshTank=totalFresh*S.daysAutonomy*(1+S.reservePct/100);
+  const greyTank=greyDaily*S.daysAutonomy;
+
+  setHTML('out-demand',
+    mcard('Total fresh','gal/day',f(totalFresh,1)) +
+    mcard('Hot water','gal/day',f(hotDaily,1)) +
+    mcard('Grey produced','gal/day',f(greyDaily,1)) +
+    mcard('Peak flow','GPM',f(peakFlow,2),peakIndoor>=hose?'2 fixtures on':'hose bib') +
+    mcard('Fresh tank','gal',f(freshTank,0),`${S.daysAutonomy}d + ${S.reservePct}% reserve`) +
+    mcard('Grey tank','gal',f(greyTank,0),`${S.daysAutonomy}d capture`)
+  );
+  setHTML('note-demand',
+    `<div class="notice-title"><i class="ti ti-info-circle"></i>How this is figured</div>`+
+    `Each fixture = GPM × min/day × (occupancy if per-person). Summed: <b>${f(totalFresh,1)} gal/day fresh</b>, of which <b>${f(hotDaily,1)} gal</b> is hot. `+
+    `Grey (drained fixtures only) = <b>${f(greyDaily,1)} gal/day</b>; hose bib &amp; composting toilet add no grey. `+
+    `Fresh tank = ${f(totalFresh,1)} × ${S.daysAutonomy} days × (1+${S.reservePct}%) = <b>${f(freshTank,0)} gal</b>.`
+  );
+
+  // HOT WATER
+  const dTheat=S.setpointF-S.inletF;
+  const heatEnergyWh=heatWh(hotDaily,dTheat);
+  const tankEnergyWh=heatWh(S.tankGal,dTheat);
+  const recoveryMin=(tankEnergyWh/S.elementW)*60;
+  // standby: tank as cylinder h=2d
+  const Vft3=S.tankGal*0.133681, d=Math.cbrt(2*Vft3/Math.PI), r=d/2, hh=2*d;
+  const areaFt2=2*Math.PI*r*r+2*Math.PI*r*hh, Rval=S.insulRperIn*S.insulIn;
+  const standbyWhDay=(areaFt2*(S.setpointF-S.ambientF)/Rval)*24/3.412;
+  const elementAmps=S.elementW/S.busVoltage;
+  // shower capacity: hot gal per single shower event (per person)
+  const sh=fixtures.find(fx=>fx.showerLike)||{gpm:0,min:0,pctHot:0};
+  const hotPerShower=sh.gpm*sh.min*sh.pctHot/100;
+  const usableHotGal=S.tankGal*S.usableHotPct/100;
+  const consecShowers=hotPerShower>0?usableHotGal/hotPerShower:Infinity;
+
+  setHTML('out-hot',
+    mcard('Heating energy','Wh/day',f(heatEnergyWh,0),`ΔT ${dTheat}°F`) +
+    mcard('Recovery (full tank)','min',f(recoveryMin,0),`${S.tankGal} gal @ ${S.elementW} W`) +
+    mcard('Standby loss','Wh/day',f(standbyWhDay,0),`R-${f(Rval,0)}, ${f(areaFt2,1)} ft²`) +
+    mcard('Heater draw','A DC',f(elementAmps,1),`${S.elementW}W ÷ ${S.busVoltage}V`) +
+    mcard('Hot per shower','gal',f(hotPerShower,1),`${sh.gpm} GPM × ${sh.min} min × ${sh.pctHot}%`) +
+    mcard('Showers / full tank','#',isFinite(consecShowers)?f(consecShowers,1):'—',`${f(usableHotGal,1)} gal usable`)
+  );
+  setHTML('note-hot',
+    `<div class="notice-title"><i class="ti ti-info-circle"></i>Hot-water capacity</div>`+
+    `Energy to heat = 8.34 × gal × ΔT°F ÷ 3.412 (Wh). One military shower draws <b>${f(hotPerShower,1)} gal hot</b>; a full ${S.tankGal}-gal tank yields ~${f(usableHotGal,1)} usable ⇒ <b>${isFinite(consecShowers)?f(consecShowers,1):'∞'} back-to-back showers</b> before recovery. `+
+    `Full reheat takes <b>${f(recoveryMin,0)} min</b> at ${S.elementW} W. Raise a shower-head's GPM in the table to see capacity drop — this is your validation lever.`
+  );
+
+  // DRAINAGE (grey only)
+  const drainFix=fixtures.filter(fx=>fx.grey);
+  const totalDFU=drainFix.reduce((s,fx)=>s+fx.dfu,0);
+  let dh=`<tr><th>Fixture</th><th>Trap (in)</th><th>DFU</th><th>Min drain</th></tr>`;
+  drainFix.forEach(fx=>{
+    const branch=fx.dfu<=1?'1¼″':fx.dfu<=2?'1½″':'2″';
+    dh+=`<tr><td class="name">${fx.name}</td><td>${fx.trap}</td><td>${fx.dfu}</td><td>${branch}</td></tr>`;
+  });
+  dh+=`<tr><td class="name"><b>Total</b></td><td></td><td><b>${totalDFU}</b></td><td></td></tr>`;
+  setHTML('drain-table',dh);
+  const mainDrain=totalDFU<=6?'2″':totalDFU<=12?'3″':'4″';
+  setHTML('out-drain',
+    mcard('Total DFU','units',totalDFU) +
+    mcard('Main grey drain','',mainDrain,`≤${totalDFU<=6?6:totalDFU<=12?12:'—'} DFU`) +
+    mcard('Min vent','',(totalDFU>0?'1½″':'—'),'§3280.611')
+  );
+  setHTML('note-drain',
+    `<div class="notice-title"><i class="ti ti-info-circle"></i>Drainage notes (verify with DAPIA)</div>`+
+    `Every fixture individually trapped; horizontals graded <b>¼″ per foot</b> (§3280.610). ${totalDFU} DFU ⇒ a <b>${mainDrain} main grey line</b>. `+
+    `Minimum 1½″ vents; in a tight footprint an air-admittance valve can avoid extra roof penetrations if accepted. Composting toilet is outside the water DWV (leachate handled separately).`
+  );
+
+  // PUMP
+  const op=operatingPoint();
+  const peakHead=sysHead(peakFlow);
+  const canMeetPeak=pumpHead(peakFlow)>=peakHead;
+  const pumpRuntimeMin=totalFresh/Math.max(op.q,0.01);
+  const pumpWhDay=S.pumpRatedW*(pumpRuntimeMin/60);
+  const pumpAmps=S.pumpRatedW/S.busVoltage;
+
+  setHTML('out-pump',
+    mcard('Operating point','GPM',f(op.q,2),`@ ${f(op.h,0)} ft`) +
+    mcard('Peak demand head','ft',f(peakHead,0),`at ${f(peakFlow,2)} GPM`) +
+    mcard('Pump runtime','min/day',f(pumpRuntimeMin,0)) +
+    mcard('Pump energy','Wh/day',f(pumpWhDay,0)) +
+    mcard('Pump draw','A DC',f(pumpAmps,1),`${S.pumpRatedW}W ÷ ${S.busVoltage}V`)
+  );
+  renderPumpChart(op);
+
+  // POWER BALANCE
+  const totalWhDay=heatEnergyWh+standbyWhDay+pumpWhDay;
+  const balancePct=totalWhDay/S.budgetWh*100;
+  const peakAmps=elementAmps+pumpAmps;
+  const headroom=S.budgetWh-totalWhDay;
+
+  setHTML('out-power',
+    mcard('Hot water','Wh/day',f(heatEnergyWh+standbyWhDay,0),'heat + standby') +
+    mcard('Pumping','Wh/day',f(pumpWhDay,0)) +
+    mcard('Total','Wh/day',f(totalWhDay,0),`of ${f(S.budgetWh,0)} budget`) +
+    mcard('Budget used','%',f(balancePct,0)) +
+    mcard('Peak current','A DC',f(peakAmps,1),'heater + pump')
+  );
+  const over=totalWhDay>S.budgetWh||!canMeetPeak;
+  const nEl=el('note-power');
+  nEl.className='notice '+(over?'amber':'teal');
+  let msg='';
+  if(!canMeetPeak)msg+=`<b>Pump undersized for peak:</b> at ${f(peakFlow,2)} GPM the system needs ${f(peakHead,0)} ft but the pump gives ${f(pumpHead(peakFlow),0)} ft. Raise the curve or avoid simultaneous use.<br>`;
+  if(totalWhDay>S.budgetWh)msg+=`<b>Over energy budget by ${f(-headroom,0)} Wh/day.</b> Lower setpoint, add insulation, or raise the DC budget.`;
+  if(!over)msg=`Water-system energy is <b>${f(totalWhDay,0)} Wh/day</b> vs a <b>${f(S.budgetWh,0)} Wh</b> budget — <b>${f(headroom,0)} Wh headroom</b> (${f(balancePct,0)}% used). Peak draw ${f(peakAmps,1)} A. Pump meets peak flow.`;
+  nEl.innerHTML=`<div class="notice-title"><i class="ti ti-${over?'alert-triangle':'circle-check'}"></i>${over?'Needs attention':'Balanced'}</div>`+msg;
+
+  // META
+  setHTML('meta-bar',
+    meta('Bus voltage',`${S.busVoltage} V DC`) +
+    meta('Occupancy',`${S.occupancy} people`) +
+    meta('Toilet','Composting (no water)')
+  );
+}
+
+function mcard(label,unit,val,sub){
+  return `<div class="mcard"><div class="mcard-label">${label}</div>`+
+    `<div class="mcard-val">${val} <span style="font-size:12px;color:var(--color-text-tertiary)">${unit}</span></div>`+
+    (sub?`<div class="mcard-sub">${sub}</div>`:'')+`</div>`;
+}
+function meta(l,v){return `<div class="meta-item"><div class="meta-label">${l}</div><div class="meta-val">${v}</div></div>`;}
+
+// ---- pump chart ----
+function renderPumpChart(op){
+  const W=680,H=280,pad=44;
+  const qmax=(Math.max(...pumpCurve.map(p=>p.q),op.q)*1.1)||5;
+  const hmax=(Math.max(...pumpCurve.map(p=>p.h),sysHead(qmax))*1.1)||80;
+  const X=q=>pad+(q/qmax)*(W-pad-12), Y=h=>H-pad-(h/hmax)*(H-pad-12);
+  const cs=[...pumpCurve].sort((a,b)=>a.q-b.q);
+  const pumpPath=cs.map((p,i)=>(i?'L':'M')+X(p.q)+' '+Y(p.h)).join(' ');
+  let sysPath='';for(let q=0;q<=qmax;q+=qmax/40)sysPath+=(sysPath?'L':'M')+X(q)+' '+Y(sysHead(q));
+  let grid='';for(let i=0;i<=4;i++){const gy=pad+i*(H-pad-12)/4;grid+=`<line x1="${pad}" y1="${gy}" x2="${W-12}" y2="${gy}" stroke="var(--color-border-tertiary)" stroke-width="0.5"/>`;}
+  setHTML('pump-chart',`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Pump and system curves">
+    ${grid}
+    <line x1="${pad}" y1="${H-pad}" x2="${W-12}" y2="${H-pad}" stroke="var(--color-border-secondary)"/>
+    <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${H-pad}" stroke="var(--color-border-secondary)"/>
+    <path d="${pumpPath}" fill="none" stroke="var(--color-text-info)" stroke-width="2"/>
+    <path d="${sysPath}" fill="none" stroke="var(--color-text-warning)" stroke-width="2" stroke-dasharray="5 4"/>
+    <circle cx="${X(op.q)}" cy="${Y(op.h)}" r="5" fill="var(--color-text-success)"/>
+    <text x="${X(op.q)+8}" y="${Y(op.h)-8}" font-family="var(--font-mono)" font-size="12" fill="var(--color-text-primary)">${f(op.q,2)} GPM @ ${f(op.h,0)} ft</text>
+    <text x="${W-12}" y="${H-pad+22}" text-anchor="end" font-size="11" fill="var(--color-text-tertiary)">flow →  ${f(qmax,1)} GPM</text>
+    <text x="${pad-6}" y="${pad-6}" font-size="11" fill="var(--color-text-tertiary)">head (ft) ${f(hmax,0)}</text>
+    <text x="${pad+8}" y="${pad+14}" font-size="11" fill="var(--color-text-info)">■ pump</text>
+    <text x="${pad+64}" y="${pad+14}" font-size="11" fill="var(--color-text-warning)">▦ system</text>
+  </svg>`);
+}
+
+renderInputs();
+recalc();
+</script>
+</body>
+</html>
