@@ -165,6 +165,8 @@ table.tbl input[type=text]{font-family:var(--font-sans);font-size:12.5px;width:1
 }
 .chart-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--color-text-secondary);}
 .chart-legend .sw{display:inline-block;width:11px;height:11px;vertical-align:middle;margin-right:5px;border-radius:2px;}
+.stage-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-info);font-weight:600;margin:14px 0 6px;}
+.stage-label span{color:var(--color-text-tertiary);font-weight:400;text-transform:none;letter-spacing:0;}
 .hwnote{font-size:12px;color:var(--color-text-secondary);margin-top:10px;line-height:1.6;}
 .hwnote .ti{font-size:12px;margin-right:3px;}
 table.hwtbl{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px;}
@@ -420,14 +422,20 @@ svg{display:block;max-width:100%;height:auto;}
     </div>
     <div class="notice teal" id="note-battery"></div>
     <div class="card">
-      <div class="section-title"><i class="ti ti-engine"></i>Pump &amp; system curve</div>
+      <div class="section-title"><i class="ti ti-engine"></i>Pump sizing — usage → duty → pump → power</div>
+      <div class="info-bar">Your fixtures set the <b>peak flow</b>; static lift + fixture pressure + friction set the <b>head</b>. Together they are the <b>duty point</b> the pump must hit. The pump's efficiency at that duty sets its <b>electrical draw</b>, which flows into the DC balance above.</div>
+      <div class="stage-label">1 · Duty required <span>(driven by usage)</span></div>
+      <div class="metric-grid" id="out-duty"></div>
+      <div class="stage-label">2 · Plumbing &amp; pump inputs</div>
       <div id="grp-pump"></div>
-      <div style="margin-top:12px;font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;">Pump curve — flow (GPM) vs head (ft). Editable operating points:</div>
+      <div style="margin-top:12px;font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;">Candidate pump curve — flow vs head. Editable operating points:</div>
       <div id="pump-curve-editor"></div>
       <button class="btn" onclick="addCurvePoint()">+ add point</button>
       <div style="margin-top:14px;" id="pump-chart"></div>
-      <div class="metric-grid" id="out-pump" style="margin-top:12px;"></div>
+      <div class="stage-label">3 · Selection &amp; resulting power</div>
+      <div class="metric-grid" id="out-pump"></div>
     </div>
+    <div class="notice teal" id="note-pump"></div>
   </section>
 
   <p class="footnote">Part of the Uplift micro-home planning tools. Self-contained; inputs auto-save in this browser (use <b>Reset to defaults</b> to clear). Deploy: <code>uplift-calculators</code> → GitHub Pages → Confluence iframe.</p>
@@ -449,8 +457,8 @@ const S = {
   inletF:55, setpointF:130, tankGal:10, elementW:1500,
   insulRperIn:6.5, insulIn:3, ambientF:68,
   showerMixF:105, foI:1.5, tankShape:'cyl',
-  // pump
-  pumpRatedW:120, staticLiftFt:8, frictionK:2.5,
+  // pump — duty derived from usage; electrical power derived from duty + efficiency
+  staticLiftFt:8, fixtureHeadFt:46, frictionK:2.5, pumpEffPct:40,
   // power / battery
   budgetWh:4500, otherLoadsWh:1500, batteryDoDPct:80, systemEffPct:90,
   // composting toilet
@@ -524,9 +532,10 @@ const FIELDS = {
     ['foI','Design margin (FoI)','×',0.1,'Factor of Increase — a design safety margin on shower demand. 1.5x sizes for 50% more than the nominal draw.'],
   ],
   'grp-pump':[
-    ['pumpRatedW','Pump power at duty','W',10,'Electrical power the pump draws at its operating point. Sets pump amps and daily pumping energy.'],
     ['staticLiftFt','Static lift','ft',0.5,'Vertical height the pump must raise water, from tank to the highest fixture (head).','head'],
-    ['frictionK','Friction coeff K','ft/GPM²',0.1,'Plumbing resistance. Head lost to friction rises with flow squared (K x GPM²). Higher for long or narrow pipe runs.'],
+    ['fixtureHeadFt','Fixture pressure (head)','ft',1,'Residual pressure you want at the fixture, expressed as head. ~46 ft ≈ 20 psi ≈ 1.4 bar for a comfortable shower. Added to lift + friction to set the duty head.','head'],
+    ['frictionK','Friction coeff K','ft/GPM²',0.1,'Plumbing resistance. Head lost to friction rises with flow squared (K x flow²). Higher for long or narrow pipe runs.'],
+    ['pumpEffPct','Pump efficiency','%',5,'Combined pump + motor (wire-to-water) efficiency. Small DC booster/diaphragm pumps run ~30–45%. Electrical draw = hydraulic power ÷ this.'],
   ],
   'grp-power':[
     ['budgetWh','Water-system energy budget','Wh/day',100,'Daily energy you are willing to allot to the water system (heating + pumping). The balance check flags if you exceed it.'],
@@ -721,7 +730,7 @@ function pumpHead(q){
     const t=(q-c[i].q)/(c[i+1].q-c[i].q);return c[i].h+t*(c[i+1].h-c[i].h);}
   return 0;
 }
-function sysHead(q){return S.staticLiftFt+S.frictionK*q*q;}
+function sysHead(q){return S.staticLiftFt+S.fixtureHeadFt+S.frictionK*q*q;}  // lift + fixture pressure + friction(flow²)
 function operatingPoint(){
   const qmax=[...pumpCurve].sort((a,b)=>b.q-a.q)[0].q;
   let prev=pumpHead(0)-sysHead(0);
@@ -829,22 +838,47 @@ function recalc(){
     ` Testing will pin down the real split — adjust "urine per person" and "leachate fraction" once you have data.`
   );
 
-  // ---------- PUMP ----------
+  // ---------- PUMP (usage → duty → selection → power) ----------
+  // 1) DUTY comes from usage: peak simultaneous flow + head to overcome (lift + fixture pressure + friction)
+  const dutyFlow=peakFlow;                              // required flow (from fixtures)
+  const reqHead=sysHead(dutyFlow);                      // required head at that flow
+  const hydraulicW=dutyFlow*reqHead*0.1885;            // hydraulic power at duty (0.1885 W per GPM·ft)
+  // 2) SELECTION: does the candidate pump curve reach the duty point? + its natural operating point
   const op=operatingPoint();
-  const peakHead=sysHead(peakFlow);
-  const canMeetPeak=pumpHead(peakFlow)>=peakHead;
-  const pumpRuntimeMin=totalFresh/Math.max(op.q,0.01);
-  const pumpWhDay=S.pumpRatedW*(pumpRuntimeMin/60);
-  const pumpAmps=S.pumpRatedW/S.busVoltage;
-  Object.assign(R,{pumpWhDay,pumpAmps,canMeetPeak,peakHead});
+  const provideHead=pumpHead(dutyFlow);
+  const canMeetPeak=provideHead>=reqHead;
+  // 3) POWER follows from duty + efficiency (not a hand-entered watt)
+  const pumpElecW=hydraulicW/Math.max(S.pumpEffPct/100,0.01);   // required electrical power
+  const deliveredFlow=Math.max(op.q,0.01);
+  const pumpRuntimeMin=totalFresh/deliveredFlow;
+  const pumpWhDay=pumpElecW*(pumpRuntimeMin/60);
+  const pumpAmps=pumpElecW/S.busVoltage;
+  Object.assign(R,{pumpWhDay,pumpAmps,canMeetPeak,reqHead,dutyFlow,provideHead,pumpElecW,hydraulicW});
 
-  setHTML('out-pump',
-    mcard('Operating point',uFlu(),f(uFl(op.q),2),`@ ${HEAD(op.h,0)}`) +
-    mcard('Peak demand head',uHu(),f(uH(peakHead),0),`at ${FLOW(peakFlow,2)}`) +
-    mcard('Pump runtime','min/day',f(pumpRuntimeMin,0)) +
-    mcard('Pump energy','Wh/day',f(pumpWhDay,0)) +
-    mcard('Pump draw','A DC',f(pumpAmps,1),`${S.pumpRatedW}W ÷ ${S.busVoltage}V`)
+  // requirement (driven by usage)
+  setHTML('out-duty',
+    mcard('Peak flow demand',uFlu(),f(uFl(dutyFlow),2),'largest simultaneous fixtures') +
+    mcard('Required head',uHu(),f(uH(reqHead),0),`lift ${HEAD(S.staticLiftFt,0)} + press ${HEAD(S.fixtureHeadFt,0)} + friction`) +
+    mcard('Hydraulic power','W',f(hydraulicW,0),'flow × head at duty')
   );
+  // selection + resulting power
+  setHTML('out-pump',
+    mcard('Pump at duty',uHu(),f(uH(provideHead),0),canMeetPeak?`✓ meets ${HEAD(reqHead,0)}`:`✗ short of ${HEAD(reqHead,0)}`) +
+    mcard('Operating point',uFlu(),f(uFl(op.q),2),`@ ${HEAD(op.h,0)} delivered`) +
+    mcard('Required pump power','W',f(pumpElecW,0),`hydraulic ÷ ${S.pumpEffPct}% eff`) +
+    mcard('Pump draw','A DC',f(pumpAmps,1),`${f(pumpElecW,0)}W ÷ ${S.busVoltage}V`) +
+    mcard('Pump energy','Wh/day',f(pumpWhDay,0),`${f(pumpRuntimeMin,0)} min/day run`)
+  );
+  const npump=el('note-pump');
+  if(npump){
+    npump.className='notice '+(canMeetPeak?'teal':'amber');
+    npump.innerHTML=`<div class="notice-title"><i class="ti ti-${canMeetPeak?'circle-check':'alert-triangle'}"></i>${canMeetPeak?'Pump meets the duty':'Pump undersized for duty'}</div>`+
+      `<b>Usage sets the duty:</b> peak flow <b>${FLOW(dutyFlow,2)}</b> at <b>${HEAD(reqHead,0)}</b> head (static lift + fixture pressure + friction at that flow). `+
+      (canMeetPeak
+        ? `Your candidate pump makes ${HEAD(provideHead,0)} there — enough. `
+        : `Your candidate pump only makes ${HEAD(provideHead,0)} there — raise the curve or avoid simultaneous use. `)+
+      `<b>Pump drives power:</b> that duty needs ${f(hydraulicW,0)} W hydraulic ÷ ${S.pumpEffPct}% = <b>${f(pumpElecW,0)} W</b> electrical (${f(pumpAmps,1)} A), and ~${f(pumpRuntimeMin,0)} min/day of running ⇒ <b>${f(pumpWhDay,0)} Wh/day</b> into the DC balance above.`;
+  }
   renderPumpChart(op);
 
   // ---------- POWER BALANCE ----------
@@ -863,7 +897,7 @@ function recalc(){
   );
   const over=waterWhDay>S.budgetWh||!canMeetPeak;
   let msg='';
-  if(!canMeetPeak)msg+=`<b>Pump undersized for peak:</b> at ${FLOW(peakFlow,2)} the system needs ${HEAD(peakHead,0)} but the pump gives ${HEAD(pumpHead(peakFlow),0)}. Raise the curve or avoid simultaneous use.<br>`;
+  if(!canMeetPeak)msg+=`<b>Pump undersized for peak:</b> at ${FLOW(dutyFlow,2)} the system needs ${HEAD(reqHead,0)} but the pump gives ${HEAD(provideHead,0)}. Raise the curve or avoid simultaneous use.<br>`;
   if(waterWhDay>S.budgetWh)msg+=`<b>Over water-energy budget by ${f(-headroom,0)} Wh/day.</b> Lower setpoint, add insulation, or raise the budget.`;
   if(!over)msg=`Water-system energy is <b>${f(waterWhDay,0)} Wh/day</b> vs a <b>${f(S.budgetWh,0)} Wh</b> budget — <b>${f(headroom,0)} Wh headroom</b> (${f(balancePct,0)}% used). Peak draw ${f(peakAmps,1)} A. Pump meets peak flow.`;
   const balanceHTML=`<div class="notice-title"><i class="ti ti-${over?'alert-triangle':'circle-check'}"></i>${over?'Needs attention':'Balanced'}</div>`+msg;
