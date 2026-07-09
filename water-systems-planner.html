@@ -170,6 +170,12 @@ table.tbl input[type=text]{font-family:var(--font-sans);font-size:12.5px;width:1
 .comp-row .ti{margin-top:2px;flex-shrink:0;font-size:15px;}
 .cite{font-size:10px;color:var(--color-text-tertiary);font-family:var(--font-mono);white-space:nowrap;}
 .lg{display:inline-block;width:11px;height:11px;border-radius:3px;border:1px solid;vertical-align:middle;margin-right:4px;flex-shrink:0;}
+.mathrow{display:grid;grid-template-columns:22px 1fr auto;gap:10px;align-items:baseline;padding:8px 0;border-bottom:.5px solid var(--color-border-tertiary);}
+.mathrow:last-child{border-bottom:none;}
+.mathn{font-family:var(--font-mono);font-size:12px;color:var(--color-text-tertiary);}
+.mathname{font-size:12.5px;color:var(--color-text-primary);font-weight:500;}
+.mathf{font-size:11.5px;color:var(--color-text-secondary);font-family:var(--font-mono);margin-top:1px;}
+.mathr{font-size:12.5px;font-family:var(--font-mono);text-align:right;white-space:nowrap;color:var(--color-text-primary);}
 .stage-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-info);font-weight:600;margin:14px 0 6px;}
 .stage-label span{color:var(--color-text-tertiary);font-weight:400;text-transform:none;letter-spacing:0;}
 .hwnote{font-size:12px;color:var(--color-text-secondary);margin-top:10px;line-height:1.6;}
@@ -500,6 +506,11 @@ svg{display:block;max-width:100%;height:auto;}
     </div>
     <div class="notice teal" id="note-pump"></div>
     <div class="card">
+      <div class="section-title"><i class="ti ti-math-function"></i>Pump sizing — step by step (Total Dynamic Head)</div>
+      <div class="info-bar">TDH = static lift + fixture residual pressure + friction losses at the design flow. Pressure, hydraulic power, electrical draw and daily energy follow from it. Every value is live.</div>
+      <div id="pump-math"></div>
+    </div>
+    <div class="card">
       <div class="section-title"><i class="ti ti-clipboard-check"></i>HUD compliance — 24 CFR Part 3280, Subpart G</div>
       <div class="info-bar">Hard constraints from HUD Subpart G, maintained on David's <a href="https://requirements.uplift.us/" target="_blank" rel="noopener">requirements page</a>. Off-grid, the pump + accumulator replaces the PRV; 80 psi is the design ceiling.</div>
       <div id="out-compliance"></div>
@@ -547,7 +558,7 @@ const S = {
   insulRperIn:6.5, insulIn:3, ambientF:68,
   showerMixF:105, foI:1.5, tankShape:'cyl',
   // pump — duty derived from usage; electrical power derived from duty + efficiency
-  staticLiftFt:8, fixtureHeadFt:46, frictionK:2.5, pumpEffPct:40, maxSysPsi:80,
+  staticLiftFt:7.22, fixtureHeadFt:46, frictionK:2.5, pumpEffPct:40, maxSysPsi:80,
   // power / battery — default pack: 2× Pytes V5° (LFP, 51.2 V nom, 47.5–57.6 V, 100 Ah / 5.12 kWh each → 200 Ah / 10.24 kWh, 90% DoD, ~95% RT)
   budgetWh:4500, otherLoadsWh:1500,
   batteryDoDPct:90, systemEffPct:95, battModKwh:5.12, battModAh:100, battNomV:51.2, battModules:2,
@@ -992,6 +1003,7 @@ function recalc(){
       `<b>Pump drives power:</b> that duty needs ${f(hydraulicW,0)} W hydraulic ÷ ${S.pumpEffPct}% = <b>${f(pumpElecW,0)} W</b> electrical (${f(pumpAmps,1)} A), and ~${f(pumpRuntimeMin,0)} min/day of running ⇒ <b>${f(pumpWhDay,0)} Wh/day</b> into the DC balance above.`;
   }
   renderPumpChart(op);
+  renderPumpMath();
   renderCompliance();
 
   // ---------- POWER BALANCE ----------
@@ -1328,6 +1340,24 @@ function renderHwWall(){
     return `<tr style="background:${sel?'#E6F1FB':'transparent'};"><td style="font-weight:${sel?'500':'400'};color:${sel?'#185FA5':'var(--color-text-primary)'};">${gg.name}${sel?' <span style="background:#E6F1FB;color:#185FA5;font-size:10px;font-weight:500;padding:1px 6px;border-radius:4px;">selected</span>':''}</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);font-size:12px;">${gg.bare}</td><td style="font-family:var(--font-mono);color:var(--color-text-secondary);">${AREA(gg.sa/144,2)}</td><td style="font-family:var(--font-mono);color:#A32D2D;">${w.toFixed(1)} W</td><td style="font-family:var(--font-mono);color:#0F6E56;">${VOL(e,1)}</td></tr>`;
   }).join(''));
   setHTML('wall-rec',`Treat foam as expensive packaging and water as free payload. Insulation past <b>~${LEN(3,0)} (R-${(S.insulRperIn*3).toFixed(0)})</b> is almost pure bulk — single-digit watts of return for a lot of box. If space is tight, a bigger tank with thinner foam can be a smaller overall package than a small tank with thick foam, holds more water, and costs only a few more watts. Choose the <b>${g.name.toLowerCase()}</b> only if it fits your cavity; the cylinder is the thermal/volume optimum, the slab is the fit-a-flat-space option. Insulate the plumbing stubs too — a bare fitting can leak as much as a sizeable patch of tank wall.`);
+}
+
+// ---- pump sizing: step-by-step TDH / power worked example (live) ----
+function renderPumpMath(){
+  const host=el('pump-math'); if(!host) return;
+  const fricFt=S.frictionK*R.dutyFlow*R.dutyFlow;   // friction head at design flow
+  const row=(n,name,formula,result)=>`<div class="mathrow"><div class="mathn">${n}</div><div class="mathb"><div class="mathname">${name}</div><div class="mathf">${formula}</div></div><div class="mathr">${result}</div></div>`;
+  let h='';
+  h+=row('1','Design flow&nbsp;Q','peak simultaneous demand = 2 largest indoor fixtures',`<b>${FLOW(R.dutyFlow,2)}</b>`);
+  h+=row('2','Friction head','h<sub>f</sub> = K · Q²'+`&nbsp;&nbsp;(K = ${f(S.frictionK,1)})`,`${HEAD(fricFt,1)}`);
+  h+=row('3','Total Dynamic Head','TDH = lift + fixture residual + h<sub>f</sub>',`${HEAD(S.staticLiftFt,1)} + ${HEAD(S.fixtureHeadFt,1)} + ${HEAD(fricFt,1)} = <b>${HEAD(R.reqHead,1)}</b>`);
+  h+=row('4','Pressure at fixture','P = TDH → psi (÷ 2.307 ft/psi)',`<b>${f(R.reqPsi,1)} psi</b> &nbsp;${R.reqPsi<=S.maxSysPsi?'✓ ≤':'✗ >'} ${S.maxSysPsi}`);
+  h+=row('5','Hydraulic power','P<sub>hyd</sub> = ρ·g·Q·TDH',`<b>${f(R.hydraulicW,0)} W</b>`);
+  h+=row('6','Pump input power','P<sub>elec</sub> = P<sub>hyd</sub> ÷ η'+`&nbsp;&nbsp;(η = ${S.pumpEffPct}%)`,`${f(R.hydraulicW,0)} ÷ ${(S.pumpEffPct/100).toFixed(2)} = <b>${f(R.pumpElecW,0)} W</b>`);
+  h+=row('7','Current','I = P<sub>elec</sub> ÷ V',`${f(R.pumpElecW,0)} ÷ ${S.busVoltage} = <b>${f(R.pumpAmps,1)} A</b>`);
+  h+=row('8','Operating point','pump curve ∩ system curve',`${FLOW(R.opQ,2)} @ ${HEAD(R.opH,1)}`);
+  h+=row('9','Daily pump energy','E = P<sub>elec</sub> × (daily volume ÷ Q<sub>op</sub>)',`${f(R.pumpRuntimeMin,0)} min/d → <b>${f(R.pumpWhDay,0)} Wh/d</b>`);
+  host.innerHTML=h;
 }
 
 // ============================================================================
