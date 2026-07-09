@@ -169,6 +169,7 @@ table.tbl input[type=text]{font-family:var(--font-sans);font-size:12.5px;width:1
 .comp-row:last-child{border-bottom:none;}
 .comp-row .ti{margin-top:2px;flex-shrink:0;font-size:15px;}
 .cite{font-size:10px;color:var(--color-text-tertiary);font-family:var(--font-mono);white-space:nowrap;}
+.lg{display:inline-block;width:11px;height:11px;border-radius:3px;border:1px solid;vertical-align:middle;margin-right:4px;flex-shrink:0;}
 .stage-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-info);font-weight:600;margin:14px 0 6px;}
 .stage-label span{color:var(--color-text-tertiary);font-weight:400;text-transform:none;letter-spacing:0;}
 .hwnote{font-size:12px;color:var(--color-text-secondary);margin-top:10px;line-height:1.6;}
@@ -228,6 +229,26 @@ svg{display:block;max-width:100%;height:auto;}
       <div class="stage-label">Model parameters <span>(editable)</span></div>
       <div id="grp-batt"></div>
       <div style="display:flex;justify-content:flex-end;margin-top:12px;"><button class="btn" onclick="closeBattModal()">Done</button></div>
+    </div>
+  </div>
+
+  <!-- diagram legend / flags explainer -->
+  <div id="diag-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;align-items:center;justify-content:center;padding:1rem;overflow:auto;">
+    <div class="card" style="max-width:460px;width:100%;margin:0;max-height:92vh;overflow:auto;">
+      <div class="section-title"><i class="ti ti-sitemap"></i>Reading the diagram</div>
+      <p style="font-size:12.5px;color:var(--color-text-secondary);line-height:1.6;margin:0 0 10px;">Five lanes, left→right in calculation order: <b>Water demand → Hot water → Pump → Power/Battery</b>, with <b>Toilet</b> feeding in. Grey arrows are the calc order inside a lane; <b style="color:#a35b00;">orange arrows</b> are data handed from one subsystem to the next.</p>
+      <div class="stage-label" style="margin-top:0;">Box colours</div>
+      <div class="comp-row"><span class="lg" style="background:var(--color-background-info);border-color:#6c8ebf;"></span><span><b>Input</b> — a value you set.</span></div>
+      <div class="comp-row"><span class="lg" style="background:var(--color-background-primary);border-color:var(--color-border-secondary);"></span><span><b>Calc step</b> — an intermediate result.</span></div>
+      <div class="comp-row"><span class="lg" style="background:var(--color-background-success);border-color:#82b366;"></span><span><b>Key output</b> — a headline number.</span></div>
+      <div class="comp-row"><span class="lg" style="background:var(--color-background-danger);border-color:#b85450;"></span><span><b>Flag firing</b> — a check that's currently failing (see below).</span></div>
+      <div class="stage-label">Flags — a box turns red when its rule is broken right now</div>
+      <div class="comp-row"><i class="ti ti-alert-triangle" style="color:var(--color-text-warning)"></i><span><b>Pump pressure</b> — required pressure exceeds the 80 psi HUD ceiling. <span class="cite">§3280.609</span></span></div>
+      <div class="comp-row"><i class="ti ti-alert-triangle" style="color:var(--color-text-warning)"></i><span><b>Pump undersized</b> — the pump curve can't reach the required head at peak flow.</span></div>
+      <div class="comp-row"><i class="ti ti-alert-triangle" style="color:var(--color-text-warning)"></i><span><b>Over budget</b> — water-system energy exceeds the Wh/day budget you set.</span></div>
+      <div class="comp-row"><i class="ti ti-alert-triangle" style="color:var(--color-text-warning)"></i><span><b>Autonomy short</b> — the battery pack can't reach the power-days target; the box names how many modules you'd need.</span></div>
+      <p style="font-size:12px;color:var(--color-text-tertiary);line-height:1.6;margin:10px 0 0;">Red boxes aren't errors in the tool — they're the design not yet meeting a rule/target. Change inputs and they clear instantly.</p>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px;"><button class="btn" onclick="closeDiagModal()">Got it</button></div>
     </div>
   </div>
 
@@ -494,6 +515,14 @@ svg{display:block;max-width:100%;height:auto;}
     </div>
     <div class="card" style="overflow-x:auto;">
       <div class="section-title"><i class="ti ti-sitemap"></i>Calculation flow <span style="font-size:11px;font-weight:400;color:var(--color-text-secondary);">(values update live)</span></div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:11.5px;color:var(--color-text-secondary);margin-bottom:10px;">
+        <span><span class="lg" style="background:var(--color-background-info);border-color:#6c8ebf;"></span>Input</span>
+        <span><span class="lg" style="background:var(--color-background-primary);border-color:var(--color-border-secondary);"></span>Calc step</span>
+        <span><span class="lg" style="background:var(--color-background-success);border-color:#82b366;"></span>Key output</span>
+        <span><span class="lg" style="background:var(--color-background-danger);border-color:#b85450;"></span>Flag firing</span>
+        <span><span style="display:inline-block;width:16px;border-top:2px solid #d79b00;vertical-align:middle;margin-right:4px;"></span>Cross-subsystem hand-off</span>
+        <button class="btn tiny" onclick="openDiagModal()" style="margin-left:auto;"><i class="ti ti-help-circle"></i> What do the flags mean?</button>
+      </div>
       <div id="dep-svg" style="min-width:900px;"></div>
     </div>
   </section>
@@ -1307,13 +1336,13 @@ function renderHwWall(){
 function renderDiagram(){
   const host=el('dep-svg'); if(!host) return;
   const LW=300, GAP=18, NX=14, NW=LW-2*NX, LT=26;
-  const W=5*LW+4*GAP, H=440;
+  const W=5*LW+4*GAP, H=500, CH0=442;
   const lanes=['1 · WATER DEMAND','2 · HOT WATER','3 · PUMP','4 · POWER + BATTERY','5 · TOILET'];
   const laneH=[430,430,430,430,220];
   const lx=i=>i*(LW+GAP);
-  const nodes={}; let body='';
+  const nodes={}; let body=''; let busI=0;
   function node(id,lane,y,h,lines,type){
-    const x=lx(lane)+NX; nodes[id]={x,y,w:NW,h};
+    const x=lx(lane)+NX; nodes[id]={x,y,w:NW,h,lane};
     const fill={in:'var(--color-background-info)',calc:'var(--color-background-primary)',key:'var(--color-background-success)',flag:'var(--color-background-danger)'}[type];
     const strk={in:'#6c8ebf',calc:'var(--color-border-secondary)',key:'#82b366',flag:'#b85450'}[type];
     const tcol={in:'var(--color-text-info)',calc:'var(--color-text-primary)',key:'var(--color-text-success)',flag:'var(--color-text-danger)'}[type];
@@ -1330,9 +1359,19 @@ function renderDiagram(){
   function xEdge(a,b,label,yLab){
     const A=nodes[a],B=nodes[b];
     const y1=A.y+A.h/2, y2=B.y+B.h/2, x1=A.x+A.w, x2=B.x;
-    const xm=x2-GAP/2-4;
-    body+=`<path d="M${x1} ${y1} L${xm} ${y1} L${xm} ${y2} L${x2-5} ${y2}" fill="none" stroke="#d79b00" stroke-width="1.75" opacity="0.8" marker-end="url(#dgArrO)"/>`;
-    if(label)body+=`<text x="${(x1+xm)/2}" y="${y1-(yLab||5)}" text-anchor="middle" font-size="9.5" font-weight="600" fill="#a35b00">${label}</text>`;
+    if(B.lane-A.lane===1){
+      // adjacent lanes: short hop, turn in the single gap between them
+      const xm=x2-GAP/2-4;
+      body+=`<path d="M${x1} ${y1} L${xm} ${y1} L${xm} ${y2} L${x2-5} ${y2}" fill="none" stroke="#d79b00" stroke-width="1.75" opacity="0.85" marker-end="url(#dgArrO)"/>`;
+      if(label)body+=`<text x="${(x1+xm)/2}" y="${y1-(yLab||5)}" text-anchor="middle" font-size="9.5" font-weight="600" fill="#a35b00">${label}</text>`;
+    } else {
+      // spanning >1 lane: drop into a channel BELOW the lanes so nothing crosses a box
+      const chY=CH0+busI*7; busI++;
+      const gS=lx(A.lane)+LW+GAP/2;   // gap just right of source lane
+      const gT=lx(B.lane)-GAP/2;      // gap just left of target lane
+      body+=`<path d="M${x1} ${y1} L${gS} ${y1} L${gS} ${chY} L${gT} ${chY} L${gT} ${y2} L${x2-5} ${y2}" fill="none" stroke="#d79b00" stroke-width="1.5" opacity="0.85" marker-end="url(#dgArrO)"/>`;
+      if(label)body+=`<text x="${(gS+gT)/2}" y="${chY-3}" text-anchor="middle" font-size="9.5" font-weight="600" fill="#a35b00">${label}</text>`;
+    }
   }
   lanes.forEach((t,i)=>{
     body+=`<rect x="${lx(i)}" y="4" width="${LW}" height="${laneH[i]}" rx="10" fill="var(--color-background-secondary)" stroke="var(--color-border-tertiary)"/>`+
@@ -1491,6 +1530,8 @@ function confirmSetDefault(){
 // ---- battery spec / parameters modal ----
 function openBattModal(){const o=el('batt-overlay');if(o)o.style.display='flex';}
 function closeBattModal(){const o=el('batt-overlay');if(o)o.style.display='none';}
+function openDiagModal(){const o=el('diag-overlay');if(o)o.style.display='flex';}
+function closeDiagModal(){const o=el('diag-overlay');if(o)o.style.display='none';}
 
 const restored = load();
 if(!restored){   // fresh browser: adopt the (possibly admin-set) default baseline
