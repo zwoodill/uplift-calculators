@@ -185,10 +185,45 @@ svg{display:block;max-width:100%;height:auto;}
 
   <div class="toolbar">
     <span class="save-status" id="save-status"></span>
-    <span style="display:flex;gap:8px;align-items:center;">
+    <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <button class="btn" id="unit-toggle" onclick="toggleUnits()" title="Toggle metric / imperial units"></button>
+      <button class="btn" onclick="setAsDefault()" title="Save current values as the default baseline (password protected)"><i class="ti ti-lock"></i> Set as default</button>
       <button class="btn" onclick="resetDefaults()"><i class="ti ti-rotate"></i> Reset to defaults</button>
     </span>
+  </div>
+
+  <!-- password modal for setting the default baseline -->
+  <div id="pw-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;align-items:center;justify-content:center;padding:1rem;">
+    <div class="card" style="max-width:340px;width:100%;margin:0;">
+      <div class="section-title"><i class="ti ti-lock"></i>Set current values as defaults</div>
+      <p style="font-size:12.5px;color:var(--color-text-secondary);margin:0 0 10px;line-height:1.6;">Enter the admin password to make the current inputs the new default baseline. Applies to <b>Reset to defaults</b> and to first-time users in this browser.</p>
+      <input type="password" id="pw-input" placeholder="Password" onkeyup="if(event.key==='Enter')confirmSetDefault()"
+        style="width:100%;padding:7px 10px;border-radius:6px;border:.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-mono);">
+      <div id="pw-msg" style="font-size:11.5px;color:var(--color-text-danger);min-height:15px;margin:6px 0 8px;"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn" onclick="closePwModal()">Cancel</button>
+        <button class="btn" onclick="confirmSetDefault()" style="background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-text-info);">Save as default</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- battery spec + editable parameters -->
+  <div id="batt-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;align-items:center;justify-content:center;padding:1rem;overflow:auto;">
+    <div class="card" style="max-width:430px;width:100%;margin:0;max-height:92vh;overflow:auto;">
+      <div class="section-title"><i class="ti ti-battery-3"></i>Default battery — Pytes V5°</div>
+      <div class="info-bar" style="margin-bottom:12px;">LFP server-rack module. The reference spec is fixed; the parameters that feed the model are editable — overwrite them if you spec a different battery.</div>
+      <div class="stage-label" style="margin-top:0;">Reference · Pytes V5°</div>
+      <table class="hwtbl" style="margin-bottom:6px;"><tbody>
+        <tr><td>Chemistry</td><td style="text-align:right;">LFP (LiFePO₄)</td></tr>
+        <tr><td>Nominal voltage</td><td style="text-align:right;font-family:var(--font-mono);">51.2 V</td></tr>
+        <tr><td>Voltage range</td><td style="text-align:right;font-family:var(--font-mono);">47.5–57.6 V</td></tr>
+        <tr><td>Module</td><td style="text-align:right;font-family:var(--font-mono);">100 Ah · 5.12 kWh</td></tr>
+        <tr><td>Cycle life / warranty</td><td style="text-align:right;font-family:var(--font-mono);">6000+ · 10 yr</td></tr>
+      </tbody></table>
+      <div class="stage-label">Model parameters <span>(editable)</span></div>
+      <div id="grp-batt"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px;"><button class="btn" onclick="closeBattModal()">Done</button></div>
+    </div>
   </div>
 
   <div class="tabs" id="tabs"></div>
@@ -414,8 +449,9 @@ svg{display:block;max-width:100%;height:auto;}
     </div>
     <div class="notice" id="note-power2"></div>
     <div class="card">
-      <div class="section-title"><i class="ti ti-battery-3"></i>Battery bank &amp; loads</div>
-      <div id="grp-power"></div>
+      <div class="section-title"><i class="ti ti-battery-3"></i>Battery pack &amp; loads</div>
+      <div id="grp-loads"></div>
+      <div style="margin-top:10px;"><button class="btn" onclick="openBattModal()"><i class="ti ti-info-circle"></i> Battery: Pytes V5° — spec &amp; parameters</button></div>
     </div>
     <div class="card">
       <div class="metric-grid" id="out-battery"></div>
@@ -459,8 +495,9 @@ const S = {
   showerMixF:105, foI:1.5, tankShape:'cyl',
   // pump — duty derived from usage; electrical power derived from duty + efficiency
   staticLiftFt:8, fixtureHeadFt:46, frictionK:2.5, pumpEffPct:40,
-  // power / battery
-  budgetWh:4500, otherLoadsWh:1500, batteryDoDPct:80, systemEffPct:90,
+  // power / battery — default pack: 2× Pytes V5° (LFP, 51.2 V nom, 47.5–57.6 V, 100 Ah / 5.12 kWh each → 200 Ah / 10.24 kWh, 90% DoD, ~95% RT)
+  budgetWh:4500, otherLoadsWh:1500,
+  batteryDoDPct:90, systemEffPct:95, battModKwh:5.12, battModAh:100, battNomV:51.2, battModules:2,
   // composting toilet
   toiletMode:'urine-sep', urineLppd:1.4, toiletEmptyDays:7, leachateFrac:35,
 };
@@ -537,11 +574,17 @@ const FIELDS = {
     ['frictionK','Friction coeff K','ft/GPM²',0.1,'Plumbing resistance. Head lost to friction rises with flow squared (K x flow²). Higher for long or narrow pipe runs.'],
     ['pumpEffPct','Pump efficiency','%',5,'Combined pump + motor (wire-to-water) efficiency. Small DC booster/diaphragm pumps run ~30–45%. Electrical draw = hydraulic power ÷ this.'],
   ],
-  'grp-power':[
+  'grp-loads':[
     ['budgetWh','Water-system energy budget','Wh/day',100,'Daily energy you are willing to allot to the water system (heating + pumping). The balance check flags if you exceed it.'],
-    ['otherLoadsWh','Other house loads','Wh/day',100,'All non-water house loads per day — lights, fridge, Starlink, etc. Added to water loads to size the whole battery bank.'],
-    ['batteryDoDPct','Battery usable depth','%',5,'Usable depth of discharge — how much of the battery you actually draw. LFP is about 80%; you avoid 100% to preserve battery life.'],
-    ['systemEffPct','System efficiency','%',1,'Round-trip, wiring and converter efficiency. Real usable energy is less than nameplate; 90% is typical.'],
+    ['otherLoadsWh','Other house loads','Wh/day',100,'All non-water house loads per day — lights, fridge, Starlink, etc. Added to water loads to size the battery pack.'],
+  ],
+  'grp-batt':[
+    ['battModules','Modules in pack','#',1,'How many battery modules are wired into the pack. Product default: 2× Pytes V5° (parallel → 200 Ah, 10.24 kWh).'],
+    ['battModKwh','Module energy','kWh',0.01,'Nominal energy per module. Pytes V5° = 5.12 kWh.'],
+    ['battModAh','Module capacity','Ah',1,'Amp-hours per module. Pytes V5° = 100 Ah.'],
+    ['battNomV','Nominal voltage','V',0.1,'Battery nominal voltage. Pytes V5° = 51.2 V (48 V class); usable range 47.5–57.6 V.'],
+    ['batteryDoDPct','Usable depth (DoD)','%',5,'Usable depth of discharge. V5° rated 90% (LFP). Avoid 100% to preserve life.'],
+    ['systemEffPct','Round-trip efficiency','%',1,'Delivery + round-trip efficiency. V5° ~95%; DC-direct loads add little conversion loss.'],
   ],
   'grp-toilet':[
     ['urineLppd','Urine per person','L/day',0.1,'Urine produced per person per day — about 1.4 L is typical. Drives container / leachate tank sizing.','volL'],
@@ -904,23 +947,35 @@ function recalc(){
   const balanceClass='notice '+(over?'amber':'teal');
   ['note-power','note-power2'].forEach(id=>{const n=el(id);if(n){n.className=balanceClass;n.innerHTML=balanceHTML;}});
 
-  // ---------- BATTERY BANK ----------
+  // ---------- BATTERY PACK (defined pack → autonomy is the output) ----------
   const totalLoadWh=waterWhDay+S.otherLoadsWh;
-  const bankWh=totalLoadWh*S.daysAutonomy/((S.batteryDoDPct/100)*(S.systemEffPct/100));
-  const bankAh=bankWh/S.busVoltage;
-  Object.assign(R,{totalLoadWh,bankWh,bankAh});
+  const modWh=S.battModKwh*1000;
+  const installedWh=S.battModules*modWh;                       // nominal pack energy
+  const installedAh=S.battModules*S.battModAh;                 // parallel Ah
+  const usableWh=installedWh*(S.batteryDoDPct/100)*(S.systemEffPct/100);  // delivered usable
+  const daysAchieved=totalLoadWh>0?usableWh/totalLoadWh:Infinity;
+  const reqBankWh=totalLoadWh*S.daysAutonomy/((S.batteryDoDPct/100)*(S.systemEffPct/100));
+  const reqModules=Math.max(1,Math.ceil(reqBankWh/modWh));
+  const meetsDays=daysAchieved>=S.daysAutonomy;
+  Object.assign(R,{totalLoadWh,installedWh,installedAh,usableWh,daysAchieved,reqModules,meetsDays,modules:S.battModules});
   setHTML('out-battery',
     mcard('Total daily load','Wh/day',f(totalLoadWh,0),`water ${f(waterWhDay,0)} + other ${f(S.otherLoadsWh,0)}`) +
-    mcard('Bank energy','kWh',f(bankWh/1000,2),`${S.daysAutonomy}d ÷ ${S.batteryDoDPct}% DoD ÷ ${S.systemEffPct}% eff`) +
-    mcard('Bank capacity','Ah',f(bankAh,0),`@ ${S.busVoltage} V`) +
-    mcard('Peak current','A DC',f(peakAmps,1),'water peak')
+    mcard('Installed pack','kWh',f(installedWh/1000,2),`${S.battModules}× V5° · ${f(installedAh,0)} Ah`) +
+    mcard('Autonomy','days',f(daysAchieved,1),`target ${f(S.daysAutonomy,1)} d`) +
+    mcard('Modules for target','×',reqModules,meetsDays?`✓ ${S.battModules} installed`:`✗ need ${reqModules}, have ${S.battModules}`) +
+    mcard('Peak current','A DC',f(peakAmps,1),'heater + pump')
   );
-  setHTML('note-battery',
-    `<div class="notice-title"><i class="ti ti-info-circle"></i>Battery sizing</div>`+
-    `Usable-energy method: bank = daily load × days autonomy ÷ (usable depth × system efficiency). `+
-    `<b>${f(totalLoadWh,0)} Wh/day × ${S.daysAutonomy}d ÷ (${S.batteryDoDPct}% × ${S.systemEffPct}%)</b> ⇒ <b>${f(bankWh/1000,2)} kWh</b> (${f(bankAh,0)} Ah at ${S.busVoltage} V). `+
-    `Add other house loads at left to size the whole bank, not just the water system.`
-  );
+  const npq=el('note-battery');
+  if(npq){
+    npq.className='notice '+(meetsDays?'teal':'amber');
+    npq.innerHTML=`<div class="notice-title"><i class="ti ti-${meetsDays?'circle-check':'alert-triangle'}"></i>Battery pack — ${S.battModules}× Pytes V5°</div>`+
+      `Installed <b>${f(installedWh/1000,2)} kWh</b> (${f(installedAh,0)} Ah), of which <b>${f(usableWh/1000,2)} kWh</b> is deliverable at ${S.batteryDoDPct}% DoD × ${S.systemEffPct}% efficiency. `+
+      `Against a <b>${f(totalLoadWh,0)} Wh/day</b> total load that's <b>${f(daysAchieved,1)} days</b> of autonomy. `+
+      (meetsDays
+        ? `Meets your ${f(S.daysAutonomy,1)}-day target with ${f(usableWh/1000-totalLoadWh*S.daysAutonomy/1000,2)} kWh to spare.`
+        : `Short of the ${f(S.daysAutonomy,1)}-day target — you'd need <b>${reqModules} modules</b>. Add a module, cut load, or accept fewer days.`)+
+      ` Edit pack parameters via the battery spec button. V5° nominal 51.2 V, LFP.`;
+  }
 
   // ---------- HOT WATER SUB-TABS (render after battery so %-of-bank is known) ----------
   buildGpmBtns(); buildTempBtns(); buildShapeBtns();
@@ -934,7 +989,7 @@ function recalc(){
     mcard('Grey water',uVu()+'/day',f(uV(R.greyDaily),1),`tank ${VOL(R.greyTank,0)}`) +
     mcard('Water energy','Wh/day',f(R.waterWhDay,0),`${f(R.balancePct,0)}% of budget`,'hero') +
     mcard('Total load','Wh/day',f(R.totalLoadWh,0),'water + other') +
-    mcard('Battery bank','kWh',f(R.bankWh/1000,2),`${f(R.bankAh,0)} Ah @ ${S.busVoltage}V`,'hero') +
+    mcard('Battery bank','kWh',f(R.installedWh/1000,2),`${R.modules}× Pytes V5° installed`,'hero') +
     mcard('Peak current','A DC',f(R.peakAmps,1),'heater + pump') +
     mcard('Toilet liquid',uVu()+'/day',f(uV(R.liquidGalDay),2),S.toiletMode==='urine-sep'?'urine sep':'leachate')
   );
@@ -997,7 +1052,7 @@ function hwKwh(gal,fr,to){return gal*WL*(to-fr)/BPK;}          // kWh to heat wa
 function hwMins(kwh,w){return (kwh/w)*60000;}                  // minutes at w watts
 function hwStandbyW(areaFt2,R,dT){return areaFt2*dT/R/3.412;}  // continuous watts
 function hwWloss(saIn2,x,dT){return (saIn2/144/(S.insulRperIn*x))*dT/3.412;} // W at foam thickness x
-function bankK(){return (R.bankWh||S.budgetWh||1)/1000;}       // usable bank kWh
+function bankK(){return (R.usableWh||S.budgetWh||1)/1000;}      // deliverable bank kWh (for %-of-battery figures)
 function hwGeom(shape,gal){
   const Vw=gal*GALIN3;
   if(shape==='cube'){const a=Math.cbrt(Vw);
@@ -1226,7 +1281,9 @@ function resetDefaults(){
   fixtures    = JSON.parse(JSON.stringify(DEFAULTS.fixtures));
   showerHeads = JSON.parse(JSON.stringify(DEFAULTS.showerHeads));
   pumpCurve   = JSON.parse(JSON.stringify(DEFAULTS.pumpCurve));
+  if(DEFAULTS.unitSys) unitSys = DEFAULTS.unitSys;
   try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+  updUnitBtn();
   renderInputs();
   recalc();
   setStatus('Reset to defaults','rotate');
@@ -1238,9 +1295,46 @@ const DEFAULTS = {
   fixtures:    JSON.parse(JSON.stringify(fixtures)),
   showerHeads: JSON.parse(JSON.stringify(showerHeads)),
   pumpCurve:   JSON.parse(JSON.stringify(pumpCurve)),
+  unitSys:     unitSys,
 };
 
+// admin-set default baseline (password-gated) overrides code defaults for this origin
+const DEFAULTS_KEY = 'uplift-water-planner-defaults-v1';
+(function loadAdminDefaults(){
+  try{
+    const raw=localStorage.getItem(DEFAULTS_KEY); if(!raw) return;
+    const d=JSON.parse(raw);
+    if(d.S) Object.assign(DEFAULTS.S, d.S);
+    if(Array.isArray(d.fixtures)) DEFAULTS.fixtures=d.fixtures;
+    if(Array.isArray(d.showerHeads)) DEFAULTS.showerHeads=d.showerHeads;
+    if(Array.isArray(d.pumpCurve)) DEFAULTS.pumpCurve=d.pumpCurve;
+    if(d.unitSys) DEFAULTS.unitSys=d.unitSys;
+  }catch(e){}
+})();
+
+// ---- password-gated "set current values as the default baseline" ----
+function setAsDefault(){const o=el('pw-overlay');if(o){el('pw-input').value='';el('pw-msg').textContent='';o.style.display='flex';const i=el('pw-input');if(i)i.focus();}}
+function closePwModal(){const o=el('pw-overlay');if(o)o.style.display='none';}
+function confirmSetDefault(){
+  const v=(el('pw-input')||{}).value;
+  if(v!=='1766'){const m=el('pw-msg');if(m)m.textContent='Incorrect password.';return;}
+  const snap={S:JSON.parse(JSON.stringify(S)),fixtures:JSON.parse(JSON.stringify(fixtures)),showerHeads:JSON.parse(JSON.stringify(showerHeads)),pumpCurve:JSON.parse(JSON.stringify(pumpCurve)),unitSys};
+  try{localStorage.setItem(DEFAULTS_KEY,JSON.stringify(snap));}catch(e){}
+  Object.assign(DEFAULTS.S,snap.S);DEFAULTS.fixtures=snap.fixtures;DEFAULTS.showerHeads=snap.showerHeads;DEFAULTS.pumpCurve=snap.pumpCurve;DEFAULTS.unitSys=snap.unitSys;
+  closePwModal();setStatus('Saved as new default baseline','lock');
+}
+// ---- battery spec / parameters modal ----
+function openBattModal(){const o=el('batt-overlay');if(o)o.style.display='flex';}
+function closeBattModal(){const o=el('batt-overlay');if(o)o.style.display='none';}
+
 const restored = load();
+if(!restored){   // fresh browser: adopt the (possibly admin-set) default baseline
+  Object.assign(S, JSON.parse(JSON.stringify(DEFAULTS.S)));
+  fixtures    = JSON.parse(JSON.stringify(DEFAULTS.fixtures));
+  showerHeads = JSON.parse(JSON.stringify(DEFAULTS.showerHeads));
+  pumpCurve   = JSON.parse(JSON.stringify(DEFAULTS.pumpCurve));
+  if(DEFAULTS.unitSys) unitSys=DEFAULTS.unitSys;
+}
 updUnitBtn();
 renderTabs();
 renderHwTabs();
