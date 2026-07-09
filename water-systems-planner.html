@@ -74,6 +74,9 @@ h1{font-size:22px;font-weight:500;margin:0 0 4px;}
   padding:6px 0;border-bottom:.5px solid var(--color-border-tertiary);}
 .field:last-child{border-bottom:none;}
 .field-lbl{font-size:13px;color:var(--color-text-primary);}
+.help{font-size:13px;color:var(--color-text-tertiary);cursor:help;vertical-align:middle;}
+.help:hover{color:var(--color-text-info);}
+th .help{font-size:12px;}
 .field-input{display:flex;align-items:center;gap:6px;}
 .field-input input,.field-input select{font-family:var(--font-mono);font-size:14px;
   width:88px;text-align:right;padding:5px 8px;border-radius:6px;
@@ -493,44 +496,45 @@ const HWTABS = [
   {label:'Wall & shape',     icon:'box'},
 ];
 
+// each field: [key, label, unit, step, help?]  — help shows as a hover tooltip
 const FIELDS = {
   'grp-occupancy':[
-    ['adults','Adults','#',1],
-    ['children','Children','#',1],
-    ['guests','Guests / others','#',1],
-    ['childFactor','Child water use','%',5],
+    ['adults','Adults','#',1,'Full-time adult occupants. Each counts as one full water user.'],
+    ['children','Children','#',1,'Full-time child occupants. They use less water than adults — scaled by the Child water use % below.'],
+    ['guests','Guests / others','#',1,'Occasional extra occupants, counted as full adults to keep sizing headroom.'],
+    ['childFactor','Child water use','%',5,'How much water a child uses relative to an adult. 60% means a child draws 0.6x an adult. Feeds the water-equivalent occupancy.'],
   ],
   'grp-system':[
-    ['busVoltage','DC bus voltage','V',1],
-    ['daysAutonomy','Days of autonomy','days',0.5],
-    ['reservePct','Tank reserve','%',5],
+    ['busVoltage','DC bus voltage','V',1,'DC voltage of the house electrical bus (48 V here). Sets amp draw for the heater and pump: Amps = Watts / Volts.'],
+    ['daysAutonomy','Days of autonomy','days',0.5,'How many days the system must run with no resupply — no tank refill and no solar. Sizes BOTH the water tanks and the battery bank; higher = more storage.'],
+    ['reservePct','Tank reserve','%',5,'Safety buffer kept in the fresh tank on top of daily use so you never run it bone-dry. 15% is roughly a partial extra day of margin.'],
   ],
   'grp-hot':[
-    ['inletF','Cold inlet temp','°F',1],
-    ['setpointF','Tank setpoint','°F',1],
-    ['tankGal','Hot tank size','gal',0.5],
-    ['elementW','DC heater power','W',50],
-    ['insulRperIn','Insulation R / inch','R/in',0.5],
-    ['insulIn','Insulation thickness','in',0.25],
-    ['ambientF','Cabin ambient temp','°F',1],
-    ['showerMixF','Shower mixed temp','°F',1],
-    ['foI','Design margin (FoI)','×',0.1],
+    ['inletF','Cold inlet temp','°F',1,'Temperature of the incoming cold water. A colder inlet means more energy is needed to reach setpoint.'],
+    ['setpointF','Tank setpoint','°F',1,'Temperature the hot tank is held at. Higher = more usable shower water per stored gallon, but more standby loss. 140°F also pasteurizes (kills Legionella).'],
+    ['tankGal','Hot tank size','gal',0.5,'Physical water capacity of the hot-water tank.'],
+    ['elementW','DC heater power','W',50,'Power of the DC heating element. Higher = faster reheat and more amps, but the same total energy per heat cycle.'],
+    ['insulRperIn','Insulation R / inch','R/in',0.5,'Insulation quality — R-value per inch of material (closed-cell foam is about 6.5). Total R = this x thickness.'],
+    ['insulIn','Insulation thickness','in',0.25,'Thickness of insulation around the tank. More cuts standby loss but grows the tank box in every dimension.'],
+    ['ambientF','Cabin ambient temp','°F',1,'Air temperature around the tank. The tank bleeds heat to this; a bigger gap means more standby loss.'],
+    ['showerMixF','Shower mixed temp','°F',1,'Comfortable temperature at the shower head after the mixing valve (TMV) blends hot tank water with cold. About 105°F.'],
+    ['foI','Design margin (FoI)','×',0.1,'Factor of Increase — a design safety margin on shower demand. 1.5x sizes for 50% more than the nominal draw.'],
   ],
   'grp-pump':[
-    ['pumpRatedW','Pump power at duty','W',10],
-    ['staticLiftFt','Static lift','ft',0.5],
-    ['frictionK','Friction coeff K','ft/GPM²',0.1],
+    ['pumpRatedW','Pump power at duty','W',10,'Electrical power the pump draws at its operating point. Sets pump amps and daily pumping energy.'],
+    ['staticLiftFt','Static lift','ft',0.5,'Vertical height the pump must raise water, from tank to the highest fixture, in feet of head.'],
+    ['frictionK','Friction coeff K','ft/GPM²',0.1,'Plumbing resistance. Head lost to friction rises with flow squared (K x GPM²). Higher for long or narrow pipe runs.'],
   ],
   'grp-power':[
-    ['budgetWh','Water-system energy budget','Wh/day',100],
-    ['otherLoadsWh','Other house loads','Wh/day',100],
-    ['batteryDoDPct','Battery usable depth','%',5],
-    ['systemEffPct','System efficiency','%',1],
+    ['budgetWh','Water-system energy budget','Wh/day',100,'Daily energy you are willing to allot to the water system (heating + pumping). The balance check flags if you exceed it.'],
+    ['otherLoadsWh','Other house loads','Wh/day',100,'All non-water house loads per day — lights, fridge, Starlink, etc. Added to water loads to size the whole battery bank.'],
+    ['batteryDoDPct','Battery usable depth','%',5,'Usable depth of discharge — how much of the battery you actually draw. LFP is about 80%; you avoid 100% to preserve battery life.'],
+    ['systemEffPct','System efficiency','%',1,'Round-trip, wiring and converter efficiency. Real usable energy is less than nameplate; 90% is typical.'],
   ],
   'grp-toilet':[
-    ['urineLppd','Urine per person','L/day',0.1],
-    ['toiletEmptyDays','Days between empties','days',1],
-    ['leachateFrac','Leachate fraction','%',5],
+    ['urineLppd','Urine per person','L/day',0.1,'Urine produced per person per day — about 1.4 L is typical. Drives container / leachate tank sizing.'],
+    ['toiletEmptyDays','Days between empties','days',1,'How often you empty the urine container or leachate tank. Longer intervals need a larger container.'],
+    ['leachateFrac','Leachate fraction','%',5,'Leachate mode only: the share of urine that drains off as liquid; the rest is absorbed or evaporated in the compost.'],
   ],
 };
 
@@ -557,8 +561,9 @@ function showTab(id){activeTab=id;renderTabs();save();}
 function renderInputs(){
   for(const grp in FIELDS){
     let html='';
-    for(const [key,label,unit,step] of FIELDS[grp]){
-      html+=`<div class="field"><div class="field-lbl">${label}</div>
+    for(const [key,label,unit,step,help] of FIELDS[grp]){
+      const tip = help?` <i class="ti ti-help-circle help" title="${help}"></i>`:'';
+      html+=`<div class="field"><div class="field-lbl">${label}${tip}</div>
         <div class="field-input"><input type="number" step="${step}" value="${S[key]}" oninput="upd('${key}',this.value)">
         <span class="unit">${unit}</span></div></div>`;
     }
@@ -567,7 +572,7 @@ function renderInputs(){
   // toilet mode select prepended into its group
   const tg=el('grp-toilet');
   if(tg){
-    const sel=`<div class="field"><div class="field-lbl">Liquid handling</div>
+    const sel=`<div class="field"><div class="field-lbl">Liquid handling <i class="ti ti-help-circle help" title="Urine separation diverts all urine at the seat and keeps solids dry. Leachate lets excess liquid drain to a small tank. Testing will decide which fits."></i></div>
       <div class="field-input"><select onchange="updStr('toiletMode',this.value)">
         <option value="urine-sep"${S.toiletMode==='urine-sep'?' selected':''}>Urine separation</option>
         <option value="leachate"${S.toiletMode==='leachate'?' selected':''}>Leachate tank</option>
@@ -583,7 +588,12 @@ function updStr(key,val){S[key]=val;renderInputs();recalc();}
 
 // ---- fixture table ----
 function renderFixtureTable(){
-  let h=`<tr><th>Fixture</th><th>GPM</th><th>min/day</th><th>%hot</th><th>grey</th><th>/person</th><th></th></tr>`;
+  let h=`<tr><th>Fixture</th>`+
+    `<th title="Flow rate of the fixture in gallons per minute.">GPM</th>`+
+    `<th title="Effective water-on minutes per day for this fixture. For a military shower, enter the ~2 min actually flowing, not the 10 min in the stall.">min/day</th>`+
+    `<th title="Share of this fixture's water drawn from the hot tank (rest is cold).">%hot</th>`+
+    `<th title="Does this fixture drain to the grey tank? Hose bib (external) and composting toilet do not.">grey</th>`+
+    `<th title="Does usage scale with occupancy? On for personal fixtures, off for one-offs like a hose bib.">/person</th><th></th></tr>`;
   fixtures.forEach((fx,i)=>{
     h+=`<tr>
       <td class="name"><input type="text" value="${fx.name}" oninput="updFix(${i},'name',this.value)"></td>
