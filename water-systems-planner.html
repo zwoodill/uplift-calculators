@@ -500,8 +500,8 @@ const S = {
   adults:2, children:0, guests:0, childFactor:60, occupancy:2,
   // system — autonomy split: water-days (cheap tank volume) vs power-days (expensive battery)
   busVoltage:48, waterDays:5, powerDays:3, reservePct:15,
-  // hot water
-  inletF:55, setpointF:130, tankGal:10, elementW:1500,
+  // hot water — inlet 10°C (50°F, robust for cold regions); setpoint 60°C (140°F, Legionella-safe)
+  inletF:50, setpointF:140, tankGal:10, elementW:1500,
   insulRperIn:6.5, insulIn:3, ambientF:68,
   showerMixF:105, foI:1.5, tankShape:'cyl',
   // pump — duty derived from usage; electrical power derived from duty + efficiency
