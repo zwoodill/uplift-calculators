@@ -119,6 +119,11 @@ table.tbl input[type=text]{font-family:var(--font-sans);font-size:12.5px;width:1
 /* fixture table: center each column so headers sit over their inputs (name column stays left) */
 #fixture-table th,#fixture-table td{text-align:center;}
 #fixture-table th:first-child,#fixture-table td:first-child{text-align:left;}
+/* loads table: center columns, widen the name field so long labels aren't clipped */
+#loads-table th,#loads-table td{text-align:center;}
+#loads-table th:first-child,#loads-table td:first-child{text-align:left;}
+#loads-table td.name{width:34%;}
+#loads-table td.name input[type=text]{width:100%;}
 .btn{font-size:12px;font-family:var(--font-sans);padding:5px 10px;border-radius:6px;cursor:pointer;
   border:.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary);}
 .btn.tiny{padding:3px 7px;font-size:11px;}
