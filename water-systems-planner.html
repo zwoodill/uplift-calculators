@@ -1766,8 +1766,8 @@ function renderCompliance(){
 // ---- persistence: auto-save inputs to this browser, restore on load ----
 // Scoped per origin: the Confluence/GitHub-Pages version persists across reloads
 // there; the local file:// copy keeps its own separate memory.
-const STORAGE_KEY = 'uplift-water-planner-v1';
-const APP_VERSION = 'v32';   // bump with each deploy (matches the Confluence iframe ?v tag)
+const STORAGE_KEY = 'uplift-water-planner-v2';   // bumped v1→v2 to discard stale saved state so current defaults load
+const APP_VERSION = 'v33';   // bump with each deploy (matches the Confluence iframe ?v tag)
 let booted = false;
 function setStatus(msg,icon){ setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`); }
 function save(){
@@ -1818,7 +1818,7 @@ const DEFAULTS = {
 };
 
 // admin-set default baseline (password-gated) overrides code defaults for this origin
-const DEFAULTS_KEY = 'uplift-water-planner-defaults-v1';
+const DEFAULTS_KEY = 'uplift-water-planner-defaults-v2';   // bumped so any stale admin baseline is ignored
 (function loadAdminDefaults(){
   try{
     const raw=localStorage.getItem(DEFAULTS_KEY); if(!raw) return;
