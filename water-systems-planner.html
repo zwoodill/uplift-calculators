@@ -608,8 +608,8 @@ const S = {
   adults:2, children:0, guests:0, childFactor:60, occupancy:2,
   // system — autonomy split: water-days (cheap tank volume) vs power-days (expensive battery)
   busVoltage:48, waterDays:5, powerDays:3, reservePct:15,
-  // hot water — inlet 10°C (50°F, robust for cold regions); setpoint 60°C (140°F, Legionella-safe)
-  inletF:50, setpointF:140, tankGal:10, elementW:1500,
+  // hot water — inlet ≈ cabin ambient minus a margin (onboard tank sits inside; ~18°C/64°F); setpoint 60°C (140°F, Legionella-safe)
+  inletF:64, setpointF:140, tankGal:10, elementW:1500,
   insulRperIn:6.5, insulIn:3, ambientF:68,
   showerMixF:105, foI:1.5, tankShape:'cyl',
   // pump — shower-governed critical loop; ¾" header + ½" branch; friction via Hazen-Williams
@@ -732,7 +732,7 @@ const FIELDS = {
     ['reservePct','Tank reserve','%',5,'Safety buffer kept in the fresh tank on top of daily use so you never run it bone-dry — extra margin beyond the days of autonomy.'],
   ],
   'grp-hot':[
-    ['inletF','Cold inlet temp','°F',1,'Temperature of the incoming cold water. A colder inlet means more energy is needed to reach setpoint.','temp'],
+    ['inletF','Cold inlet temp','°F',1,'Temperature of the incoming cold water. Fed from the onboard tank inside the cabin, so it sits near ambient — default is a couple degrees under ambient (safe/conservative). Drop it for a cold-weather outage where the cabin (and tank) cool down.','temp'],
     ['setpointF','Tank setpoint','°F',1,'Temperature the hot tank is held at. Higher = more usable shower water per stored gallon, but more standby loss. 140°F also pasteurizes (kills Legionella).','temp'],
     ['tankGal','Hot tank size','gal',0.5,'Physical water capacity of the hot-water tank.','vol'],
     ['elementW','DC heater power','W',50,'Power of the DC heating element. Higher = faster reheat and more amps, but the same total energy per heat cycle.'],
