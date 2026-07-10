@@ -1248,7 +1248,7 @@ function hwSwitchTab(n){hwTab=n;renderHwTabs();save();}
 // ---- quick controls (mirror shared state) ----
 function buildGpmBtns(){
   const c=el('gpm-btns');if(!c)return;const g=showerFix().gpm;
-  c.innerHTML=[1.5,1.75,2.0].map(r=>`<button class="sel" onclick="setShowerGpm(${r})" style="${r===g?'background:#E1F5EE;color:#0F6E56;border-color:#0F6E56;':'color:var(--color-text-secondary);'}">${f(uFl(r),2)} ${uFlu()}</button>`).join('');
+  c.innerHTML=[1.0,1.25,1.5,1.75].map(r=>`<button class="sel" onclick="setShowerGpm(${r})" style="${r===g?'background:#E1F5EE;color:#0F6E56;border-color:#0F6E56;':'color:var(--color-text-secondary);'}">${f(uFl(r),2)} ${uFlu()}</button>`).join('');
 }
 function setShowerGpm(v){showerFix().gpm=v;renderFixtureTable();recalc();}
 function buildTempBtns(){
