@@ -1068,7 +1068,8 @@ function recalc(){
   Object.assign(R,{waterWhDay,balancePct,peakAmps,headroom});
 
   setHTML('out-power',
-    mcard('Hot water','Wh/day',f(heatEnergyWh+standbyWhDay,0),'heat + standby') +
+    mcard('Hot-water heating','Wh/day',f(heatEnergyWh,0),'daily hot draws') +
+    mcard('Standby loss','Wh/day',f(standbyWhDay,0),`${f(standbyW,1)} W · 24/7 · R-${f(Rval,0)}`) +
     mcard('Pumping','Wh/day',f(pumpWhDay,0)) +
     mcard('Water total','Wh/day',f(waterWhDay,0),`of ${f(S.budgetWh,0)} budget`) +
     mcard('Budget used','%',f(balancePct,0)) +
