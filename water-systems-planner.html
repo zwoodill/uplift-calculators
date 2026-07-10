@@ -560,8 +560,14 @@ svg{display:block;max-width:100%;height:auto;}
       <div class="footnote">W = draw when running · h/day = on-hours (or effective on-time for cycling loads like the fridge). These feed the battery total load and the profile below.</div>
     </div>
     <div class="card" style="overflow-x:auto;">
-      <div class="section-title"><i class="ti ti-chart-area"></i>Daily energy profile <span style="font-size:11px;font-weight:400;color:var(--color-text-secondary);">(typical day)</span></div>
-      <div class="info-bar">Stacked load by category (bars, hourly W) vs solar generation (line). Where the solar line rises above the stack = surplus available to bank as hot water.</div>
+      <div class="section-title"><i class="ti ti-chart-area"></i>Daily energy profile <span style="font-size:11px;font-weight:400;color:var(--color-text-secondary);">(typical day)</span>
+        <span style="margin-left:auto;display:flex;gap:4px;align-items:center;">
+          <span style="font-size:11px;color:var(--color-text-tertiary);">zoom</span>
+          <button class="btn tiny" onclick="zoomEnergy(-1)" title="Zoom out">−</button>
+          <button class="btn tiny" onclick="zoomEnergy(1)" title="Zoom in — then scroll horizontally">+</button>
+        </span>
+      </div>
+      <div class="info-bar">Stacked load by category (bars, hourly W) vs solar generation (line). Where the solar line rises above the stack = surplus available to bank as hot water. Hover a column for its values; zoom in and scroll to inspect.</div>
       <div id="energy-chart" style="min-width:640px;"></div>
     </div>
   </section>
@@ -652,6 +658,7 @@ let loads = [
 
 let activeTab = 'summary';
 let hwTab = 0;   // hot-water sub-tab index
+let energyZoom = 1;   // horizontal zoom for the daily energy chart
 let occEqG = 2;  // water-equivalent occupancy (adults + guests + weighted children); set in recalc
 
 // results bucket populated by recalc(), read by summary/other panes
@@ -1365,7 +1372,7 @@ function buildGpmBtns(){
 function setShowerGpm(v){showerFix().gpm=v;renderFixtureTable();recalc();}
 function buildTempBtns(){
   const c=el('temp-btns');if(!c)return;
-  c.innerHTML=[120,130,140].map(t=>`<button class="sel" onclick="setSetpoint(${t})" style="${t===S.setpointF?'background:#FAEEDA;color:#633806;border-color:#BA7517;':'color:var(--color-text-secondary);'}">${T(t)}</button>`).join('');
+  c.innerHTML=[130,140,150,160].map(t=>`<button class="sel" onclick="setSetpoint(${t})" style="${t===S.setpointF?'background:#FAEEDA;color:#633806;border-color:#BA7517;':'color:var(--color-text-secondary);'}">${T(t)}</button>`).join('');
 }
 function setSetpoint(v){S.setpointF=v;renderInputs();recalc();}
 function buildShapeBtns(){
@@ -1398,7 +1405,7 @@ function renderHwSizing(){
   setHTML('m-tank',`${f(uV(head),1)} <span style="font-size:14px;font-weight:400;">${uVu()}</span>`);
   setHTML('m-tank-note',`${VOL(S.tankGal,0)} tank − ${VOL(tn,1)} drawn`);
   setHTML('m-post',`${T(postShowerTemp(),0)}`);
-  setHTML('temp-table',[120,130,140].map(t=>{
+  setHTML('temp-table',[130,140,150,160].map(t=>{
     const h=(S.showerMixF-S.inletF)/(t-S.inletF);
     const nd=shf.gpm*shf.min*R.occEq*S.foI*h;
     const isSel=t===S.setpointF;
@@ -1587,6 +1594,7 @@ function renderEnergy(){
   );
   renderEnergyChart();
 }
+function zoomEnergy(d){ energyZoom=Math.max(1,Math.min(5,energyZoom+d)); renderEnergyChart(); }
 function renderEnergyChart(){
   const host=el('energy-chart'); if(!host) return;
   const byCat=loadWhByCat();
@@ -1595,22 +1603,39 @@ function renderEnergyChart(){
   const order=['hotwater','standby','pump','cook','fridge','light','plug','hvac','fan'];
   const prof={}; order.forEach(k=>prof[k]=loadProfile(LOAD_CATS[k].prof).map(x=>x*dayWh[k]));
   const sol=solarProfile().map(x=>x*(R.solarWhDay||0));
-  let maxY=0; for(let h=0;h<24;h++){let s=0;order.forEach(k=>s+=prof[k][h]);maxY=Math.max(maxY,s,sol[h]);}
+  const tot=[]; let maxY=0, peakH=0, peakSolH=0;
+  for(let h=0;h<24;h++){let s=0;order.forEach(k=>s+=prof[k][h]);tot[h]=s;maxY=Math.max(maxY,s,sol[h]);
+    if(s>tot[peakH])peakH=h; if(sol[h]>sol[peakSolH])peakSolH=h;}
   maxY=(maxY*1.1)||100;
-  const W=720,H=300,PX=46,PB=28,PT=10,PR=12, bw=(W-PX-PR)/24;
+  const W=720,H=310,PX=60,PB=30,PT=16,PR=14, bw=(W-PX-PR)/24;
   const X=h=>PX+h*bw, Y=v=>H-PB-(v/maxY)*(H-PB-PT);
-  let s=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:640px;">`;
-  for(let i=0;i<=4;i++){const gy=PT+i*(H-PB-PT)/4;s+=`<line x1="${PX}" y1="${gy}" x2="${W-PR}" y2="${gy}" stroke="var(--color-border-tertiary)" stroke-width="0.5"/><text x="${PX-5}" y="${gy+3}" text-anchor="end" font-size="9" fill="var(--color-text-tertiary)">${Math.round(maxY*(1-i/4))}</text>`;}
+  let s=`<svg viewBox="0 0 ${W} ${H}" style="width:${100*energyZoom}%;min-width:${Math.round(640*energyZoom)}px;">`;
+  // gridlines + right-aligned value labels
+  for(let i=0;i<=4;i++){const gy=PT+i*(H-PB-PT)/4;
+    s+=`<line x1="${PX}" y1="${gy}" x2="${W-PR}" y2="${gy}" stroke="var(--color-border-tertiary)" stroke-width="0.5"/>`+
+       `<text x="${PX-7}" y="${gy+3}" text-anchor="end" font-size="9" fill="var(--color-text-tertiary)">${Math.round(maxY*(1-i/4))}</text>`;}
+  // rotated y-axis title (clear of the numbers) + x ticks
+  s+=`<text x="15" y="${(PT+H-PB)/2}" transform="rotate(-90 15 ${(PT+H-PB)/2})" text-anchor="middle" font-size="10" fill="var(--color-text-secondary)">Power (W)</text>`;
   for(let h=0;h<=24;h+=3){s+=`<text x="${X(h)}" y="${H-PB+14}" text-anchor="middle" font-size="9" fill="var(--color-text-tertiary)">${h}h</text>`;}
+  // stacked bars
   for(let h=0;h<24;h++){let yb=0;order.forEach(k=>{const v=prof[k][h];if(v<=0)return;const y0=Y(yb),y1=Y(yb+v);s+=`<rect x="${X(h)+0.5}" y="${y1}" width="${bw-1}" height="${Math.max(0,y0-y1)}" fill="${LOAD_CATS[k].color}"/>`;yb+=v;});}
+  // solar line
   let pts=''; for(let h=0;h<24;h++){pts+=`${X(h)+bw/2},${Y(sol[h])} `;}
   s+=`<polyline points="${pts.trim()}" fill="none" stroke="#f5b301" stroke-width="2.5"/>`;
+  // peak markers
+  s+=`<circle cx="${X(peakH)+bw/2}" cy="${Y(tot[peakH])}" r="3" fill="var(--color-text-primary)"/>`+
+     `<text x="${X(peakH)+bw/2}" y="${Y(tot[peakH])-6}" text-anchor="middle" font-size="9" font-weight="600" fill="var(--color-text-primary)">${Math.round(tot[peakH])} W</text>`;
+  s+=`<text x="${X(peakSolH)+bw/2}" y="${Y(sol[peakSolH])-6}" text-anchor="middle" font-size="9" font-weight="600" fill="#a37400">${Math.round(sol[peakSolH])} W</text>`;
+  // baseline
   s+=`<line x1="${PX}" y1="${H-PB}" x2="${W-PR}" y2="${H-PB}" stroke="var(--color-border-secondary)"/>`;
-  s+=`<text x="${PX-5}" y="${PT+3}" text-anchor="end" font-size="9" fill="var(--color-text-tertiary)">W</text></svg>`;
+  // per-hour transparent hover targets with native tooltips
+  for(let h=0;h<24;h++){ s+=`<rect x="${X(h)}" y="${PT}" width="${bw}" height="${H-PB-PT}" fill="transparent"><title>${h}:00 — load ${Math.round(tot[h])} W · solar ${Math.round(sol[h])} W${sol[h]>tot[h]?' · surplus '+Math.round(sol[h]-tot[h])+' W':''}</title></rect>`; }
+  s+=`</svg>`;
   let leg='<div class="chart-legend">';
   order.forEach(k=>{leg+=`<span><span class="sw" style="background:${LOAD_CATS[k].color};"></span>${LOAD_CATS[k].label}</span>`;});
   leg+=`<span><span style="display:inline-block;width:16px;border-top:2.5px solid #f5b301;vertical-align:middle;margin-right:4px;"></span>Solar generation</span></div>`;
-  host.innerHTML=s+leg;
+  const cap=`<div class="footnote">Peak load <b>${Math.round(tot[peakH])} W</b> at ${peakH}:00 · peak solar <b>${Math.round(sol[peakSolH])} W</b> at ${peakSolH}:00 · hover any hour for its values · zoom ${energyZoom}×.</div>`;
+  host.innerHTML=s+leg+cap;
 }
 
 // ============================================================================
