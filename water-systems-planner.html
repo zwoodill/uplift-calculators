@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Micro-Home Water Systems Planner</title>
+<title>Uplift Off-Grid Systems Planner</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
 <style>
 :root{
@@ -179,6 +179,8 @@ table.tbl input[type=text]{font-family:var(--font-sans);font-size:12.5px;width:1
 .mathname{font-size:12.5px;color:var(--color-text-primary);font-weight:500;}
 .mathf{font-size:11.5px;color:var(--color-text-secondary);font-family:var(--font-mono);margin-top:1px;}
 .mathr{font-size:12.5px;font-family:var(--font-mono);text-align:right;white-space:nowrap;color:var(--color-text-primary);}
+.ifthen{font-size:12.5px;color:var(--color-text-secondary);padding:7px 11px;background:var(--color-background-secondary);border-radius:7px;margin-bottom:6px;line-height:1.55;}
+.ifthen .ifk{font-family:var(--font-mono);font-weight:700;color:var(--color-text-info);margin-right:5px;}
 .stage-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-info);font-weight:600;margin:14px 0 6px;}
 .stage-label span{color:var(--color-text-tertiary);font-weight:400;text-transform:none;letter-spacing:0;}
 .hwnote{font-size:12px;color:var(--color-text-secondary);margin-top:10px;line-height:1.6;}
@@ -193,8 +195,8 @@ svg{display:block;max-width:100%;height:auto;}
 <body>
 <div class="page-wrapper">
 
-  <h1>Micro-Home Water Systems Planner</h1>
-  <p class="subtitle">Occupancy-driven water demand, hot-water capacity, drainage, composting toilet, and off-grid DC power balance.</p>
+  <h1>Uplift Off-Grid Systems Planner</h1>
+  <p class="subtitle">Water demand, hot-water capacity, drainage, composting toilet, DC power, solar &amp; control logic for an off-grid microhome.</p>
   <span class="part-chip">Water Systems · Off-grid</span>
 
   <div class="toolbar">
@@ -531,6 +533,34 @@ svg{display:block;max-width:100%;height:auto;}
     </div>
   </section>
 
+  <!-- ================= ENERGY & CONTROL ================= -->
+  <section class="tabpane" data-pane="energy">
+    <div class="info-bar">
+      How the system spends energy over a typical day for the selected solar scenario, and the hot-water control logic that shifts heating onto solar surplus. <b>Electrical loads below are placeholders</b> — refine with your electrical engineer.
+    </div>
+    <div class="card">
+      <div class="section-title"><i class="ti ti-route"></i>Hot-water control logic</div>
+      <div class="ctrl-card" style="margin-bottom:10px;">
+        <div class="ctrl-label">Control strategy</div>
+        <div class="btn-row" id="control-btns"></div>
+      </div>
+      <div id="grp-control"></div>
+      <div style="margin-top:10px;" id="control-logic"></div>
+      <div class="metric-grid" id="out-control" style="margin-top:12px;"></div>
+    </div>
+    <div class="card">
+      <div class="section-title"><i class="ti ti-plug"></i>Electrical loads <span style="font-size:11px;font-weight:400;color:var(--color-text-secondary);">(placeholder — refine with EE)</span></div>
+      <div class="tblwrap"><table class="tbl" id="loads-table"></table></div>
+      <div style="margin-top:8px;"><button class="btn" onclick="addLoad()">+ add load</button></div>
+      <div class="footnote">W = draw when running · h/day = on-hours (or effective on-time for cycling loads like the fridge). These feed the battery total load and the profile below.</div>
+    </div>
+    <div class="card" style="overflow-x:auto;">
+      <div class="section-title"><i class="ti ti-chart-area"></i>Daily energy profile <span style="font-size:11px;font-weight:400;color:var(--color-text-secondary);">(typical day)</span></div>
+      <div class="info-bar">Stacked load by category (bars, hourly W) vs solar generation (line). Where the solar line rises above the stack = surplus available to bank as hot water.</div>
+      <div id="energy-chart" style="min-width:640px;"></div>
+    </div>
+  </section>
+
   <!-- ================= DIAGRAM (live dependency graph) ================= -->
   <section class="tabpane" data-pane="diagram">
     <div class="info-bar">
@@ -575,12 +605,14 @@ const S = {
   staticLiftFt:7.22, fixtureHeadFt:46, pumpEffPct:40, maxSysPsi:80,
   headerSize:'3/4', headerLenFt:10, branchLenFt:8, n90:4, nTee:2, simulFactor:1.3,
   // power / battery — default pack: 2× Pytes V5° (LFP, 51.2 V nom, 47.5–57.6 V, 100 Ah / 5.12 kWh each → 200 Ah / 10.24 kWh, 90% DoD, ~95% RT)
-  budgetWh:4500, otherLoadsWh:1500,
+  budgetWh:4500,
   batteryDoDPct:90, systemEffPct:95, battModKwh:5.12, battModAh:100, battNomV:51.2, battModules:2,
   // solar — scenario sets peak-sun-hours; Alaska winter & Texas summer bracket the range
   solarW:1600, solarScenario:'tx-summer', solarPSH:6.0, solarDerate:75,
-  // composting toilet — urine separation to a tank is the default; 24/7 DC vent fan
-  toiletMode:'urine-sep', urineLppd:1.4, toiletEmptyDays:7, leachateFrac:35, toiletFanW:3,
+  // hot-water control logic — floor = setpointF (Legionella-safe); boost banks solar surplus as heat
+  controlMode:'thermal-battery', boostSetpointF:160,
+  // composting toilet — urine separation to a tank is the default
+  toiletMode:'urine-sep', urineLppd:1.4, toiletEmptyDays:7, leachateFrac:35,
 };
 
 // fixtures: gpm=flowrate, min=effective water-on min/day, pctHot=% from hot tank,
@@ -602,6 +634,17 @@ let showerHeads = [
 // representative 48V DC booster: ~55 psi (127 ft) shutoff, ~40 psi (92 ft) at 3 GPM — placeholder until a real pump is chosen
 let pumpCurve = [ {q:0,h:127},{q:1,h:118},{q:2,h:106},{q:3,h:92},{q:4,h:60},{q:5,h:20} ];
 
+// electrical loads (placeholder — refine with EE). w=watts, hrs=on-hours/day, cat=category
+let loads = [
+  {name:'Induction stovetop', w:1800, hrs:0.75, cat:'cook'},
+  {name:'DC fridge',          w:55,   hrs:10,   cat:'fridge'},
+  {name:'DC lights',          w:25,   hrs:5,    cat:'light'},
+  {name:'DC plugs (misc)',    w:30,   hrs:6,    cat:'plug'},
+  {name:'HVAC / fan',         w:120,  hrs:6,    cat:'hvac'},
+  {name:'Cabin vent fan',     w:10,   hrs:12,   cat:'fan'},
+  {name:'Toilet vent fan',    w:3,    hrs:24,   cat:'fan'},
+];
+
 let activeTab = 'summary';
 let hwTab = 0;   // hot-water sub-tab index
 let occEqG = 2;  // water-equivalent occupancy (adults + guests + weighted children); set in recalc
@@ -616,11 +659,43 @@ const TABS = [
   {id:'hot',     label:'Hot Water',icon:'flame'},
   {id:'toilet',  label:'Toilet',  icon:'recycle'},
   {id:'power',   label:'Power',   icon:'bolt'},
+  {id:'energy',  label:'Energy',  icon:'chart-area'},
   {id:'diagram', label:'Diagram', icon:'sitemap'},
 ];
 
 const SOLAR_SCEN = { 'ak-winter':0.7, 'temperate':3.5, 'tx-summer':6.0 };   // peak sun hours by scenario
+const SOLAR_DAYLIGHT = { 'ak-winter':5, 'temperate':11, 'tx-summer':14, 'custom':10 };  // daylight hours (for the daily curve)
 function scenLabel(k){return {'ak-winter':'Alaska midwinter','temperate':'Temperate spring/fall','tx-summer':'Texas summer','custom':'Custom'}[k]||k;}
+
+// electrical-load categories: label, colour, and a 24h shape (name resolved by loadProfile)
+const LOAD_CATS = {
+  cook:  {label:'Cooking',   color:'#d9822b', prof:'meals'},
+  fridge:{label:'Fridge',    color:'#4a90d9', prof:'flat'},
+  light: {label:'Lighting',  color:'#e6b800', prof:'evening'},
+  plug:  {label:'DC plugs',  color:'#7e57c2', prof:'daytime'},
+  hvac:  {label:'HVAC/fan',  color:'#26a69a', prof:'flat'},
+  fan:   {label:'Vent fans', color:'#90a4ae', prof:'flat'},
+  hotwater:{label:'Hot water',color:'#e0603a',prof:'meals'},
+  standby:{label:'Standby',  color:'#b0623a', prof:'flat'},
+  pump:  {label:'Pump',      color:'#3a7d5f', prof:'meals'},
+};
+// normalized 24h profiles (sum to 1)
+function loadProfile(name){
+  let a=new Array(24).fill(0);
+  if(name==='flat'){a.fill(1/24);}
+  else if(name==='evening'){[6,18,19,20,21,22].forEach(h=>a[h]=1); a[7]=0.5;}
+  else if(name==='daytime'){for(let h=8;h<=21;h++)a[h]=1;}
+  else if(name==='meals'){[6,7,12,17,18,19].forEach(h=>a[h]=1); a[8]=0.4;a[20]=0.6;}
+  else {a.fill(1/24);}
+  const s=a.reduce((x,y)=>x+y,0)||1; return a.map(x=>x/s);
+}
+// solar generation shape: raised half-cosine over the daylight window, area = 1
+function solarProfile(){
+  const dl=SOLAR_DAYLIGHT[S.solarScenario]||10, start=12-dl/2, end=12+dl/2;
+  let a=new Array(24).fill(0);
+  for(let h=0;h<24;h++){ const c=h+0.5; if(c>=start&&c<=end){ a[h]=Math.sin(Math.PI*(c-start)/dl); } }
+  const s=a.reduce((x,y)=>x+y,0)||1; return a.map(x=>x/s);
+}
 
 const HWTABS = [
   {label:'Tank sizing',      icon:'droplet'},
@@ -667,8 +742,10 @@ const FIELDS = {
     ['maxSysPsi','Max system pressure','psi',5,'HUD ceiling (§3280.609). The pump/accumulator cut-out is the functional PRV — keep ≤ 80 psi.'],
   ],
   'grp-loads':[
-    ['budgetWh','Water-system energy budget','Wh/day',100,'Daily energy you are willing to allot to the water system (heating + pumping). The balance check flags if you exceed it.'],
-    ['otherLoadsWh','Other house loads','Wh/day',100,'All non-water house loads per day — lights, fridge, Starlink, etc. Added to water loads to size the battery pack.'],
+    ['budgetWh','Water-system energy budget','Wh/day',100,'Daily energy allotted to the water system (heating + pumping). The balance check flags if you exceed it. House electrical loads live on the Energy tab.'],
+  ],
+  'grp-control':[
+    ['boostSetpointF','Solar-boost setpoint','°F',1,'When solar is in surplus, heat the tank up to here to bank energy as heat (thermal storage), then coast back to the floor overnight. Keep under the T&P limit (99 °C / 210 °F).','temp'],
   ],
   'grp-batt':[
     ['battModules','Modules in pack','#',1,'How many battery modules are wired into the pack. Product default: 2× Pytes V5° (parallel → 200 Ah, 10.24 kWh).'],
@@ -687,7 +764,6 @@ const FIELDS = {
     ['urineLppd','Urine per person','L/day',0.1,'Urine produced per person per day (roughly 1–1.5 L is typical). Drives container / leachate tank sizing.','volL'],
     ['toiletEmptyDays','Days between empties','days',1,'How often you empty the urine container or leachate tank. Longer intervals need a larger container.'],
     ['leachateFrac','Leachate fraction','%',5,'Leachate mode only: the share of urine that drains off as liquid; the rest is absorbed or evaporated in the compost.'],
-    ['toiletFanW','Vent fan power','W',0.5,'Composting toilet runs a continuous 24/7 DC extraction fan for odour + evaporation. Small but always-on — it feeds the battery/DC balance.'],
   ],
 };
 
@@ -793,6 +869,7 @@ function renderInputs(){
   renderFixtureTable();
   renderShowerHeadTable();
   renderCurveEditor();
+  renderLoadsTable();
 }
 function upd(key,val){S[key]=parseFloat(val);recalc();}
 function updDim(key,dim,val){S[key]=DIM[dim].i(parseFloat(val));recalc();}   // convert display -> stored
@@ -826,6 +903,34 @@ function updFix(i,k,v){fixtures[i][k]=(k==='name')?v:(k==='grey'||k==='pp')?v:pa
 function updFixFlow(i,v){fixtures[i].gpm=uFli(parseFloat(v));recalc();}   // flow input converts to stored GPM
 function addFixture(){fixtures.push({name:'New fixture',gpm:1.0,min:2,pctHot:0,grey:true,pp:true,dfu:1,trap:1.25,showerLike:false});renderFixtureTable();recalc();}
 function rmFixture(i){fixtures.splice(i,1);renderFixtureTable();recalc();}
+
+// ---- electrical loads table (Energy tab) ----
+function houseLoadsWh(){return loads.reduce((s,ld)=>s+(ld.w||0)*(ld.hrs||0),0);}
+function loadWhByCat(){const m={};loads.forEach(ld=>{m[ld.cat]=(m[ld.cat]||0)+(ld.w||0)*(ld.hrs||0);});return m;}
+function renderLoadsTable(){
+  const cats=Object.keys(LOAD_CATS).filter(k=>!['hotwater','standby','pump'].includes(k));
+  let h=`<tr><th>Load</th><th>W</th><th>h/day</th><th>Wh/day</th><th>Category</th><th></th></tr>`;
+  loads.forEach((ld,i)=>{
+    h+=`<tr>
+      <td class="name"><input type="text" value="${ld.name}" oninput="updLoad(${i},'name',this.value)"></td>
+      <td><input type="number" step="5" value="${ld.w}" oninput="updLoad(${i},'w',this.value)"></td>
+      <td><input type="number" step="0.25" value="${ld.hrs}" oninput="updLoad(${i},'hrs',this.value)"></td>
+      <td>${f(ld.w*ld.hrs,0)}</td>
+      <td><select onchange="updLoad(${i},'cat',this.value)">${cats.map(k=>`<option value="${k}"${ld.cat===k?' selected':''}>${LOAD_CATS[k].label}</option>`).join('')}</select></td>
+      <td style="text-align:center"><button class="btn tiny" onclick="rmLoad(${i})">✕</button></td>
+    </tr>`;
+  });
+  h+=`<tr><td class="name"><b>Total</b></td><td></td><td></td><td><b>${f(houseLoadsWh(),0)}</b></td><td></td><td></td></tr>`;
+  setHTML('loads-table',h);
+}
+function updLoad(i,k,v){loads[i][k]=(k==='name'||k==='cat')?v:parseFloat(v);renderLoadsTable();recalc();}
+function addLoad(){loads.push({name:'New load',w:50,hrs:2,cat:'plug'});renderLoadsTable();recalc();}
+function rmLoad(i){loads.splice(i,1);renderLoadsTable();recalc();}
+function buildControlBtns(){
+  const c=el('control-btns');if(!c)return;
+  c.innerHTML=[['thermal-battery','Thermal battery (solar boost)'],['fixed','Fixed setpoint']].map(o=>`<button class="sel" onclick="setControlMode('${o[0]}')" style="${o[0]===S.controlMode?'background:#E1F5EE;color:#0F6E56;border-color:#0F6E56;':'color:var(--color-text-secondary);'}">${o[1]}</button>`).join('');
+}
+function setControlMode(v){S.controlMode=v;recalc();}
 
 // ---- shower-head comparison (uses the shared hot-fraction model) ----
 function renderShowerHeadTable(){
@@ -986,14 +1091,12 @@ function recalc(){
   const liquidGalDay=sep?urineGalDay:urineGalDay*(S.leachateFrac/100);
   const containerGal=liquidGalDay*S.toiletEmptyDays;
   const containerLabel=sep?'Urine container':'Leachate tank';
-  const fanWhDay=S.toiletFanW*24;   // 24/7 DC vent fan
-  Object.assign(R,{liquidGalDay,containerGal,fanWhDay});
+  Object.assign(R,{liquidGalDay,containerGal});
   setHTML('out-toilet',
     mcard('Liquid produced',uVu()+'/day',f(uV(liquidGalDay),2),`${f(R.occEq,1)} occ × ${VOLL(S.urineLppd,1)}`) +
     mcard(containerLabel,uVu(),f(uV(containerGal),1),`${S.toiletEmptyDays}d between empties`) +
     mcard('Empties','/month',f(30/S.toiletEmptyDays,1)) +
-    mcard('Flush water',uVu()+'/day','0',`composting — none`) +
-    mcard('Vent fan','Wh/day',f(fanWhDay,0),`${f(S.toiletFanW,1)} W · 24/7 → DC balance`)
+    mcard('Flush water',uVu()+'/day','0',`composting — none`)
   );
   setHTML('note-toilet',
     `<div class="notice-title"><i class="ti ti-info-circle"></i>${sep?'Urine separation':'Leachate tank'}</div>`+
@@ -1085,7 +1188,8 @@ function recalc(){
   ['note-power','note-power2'].forEach(id=>{const n=el(id);if(n){n.className=balanceClass;n.innerHTML=balanceHTML;}});
 
   // ---------- BATTERY PACK (defined pack → autonomy is the output) ----------
-  const totalLoadWh=waterWhDay+S.otherLoadsWh+fanWhDay;   // water system + other house loads + composting-toilet vent fan
+  const houseWh=houseLoadsWh();                           // sum of the electrical loads table (Energy tab)
+  const totalLoadWh=waterWhDay+houseWh;
   const modWh=S.battModKwh*1000;
   const installedWh=S.battModules*modWh;                       // nominal pack energy
   const installedAh=S.battModules*S.battModAh;                 // parallel Ah
@@ -1096,7 +1200,7 @@ function recalc(){
   const meetsDays=daysAchieved>=S.powerDays;
   Object.assign(R,{totalLoadWh,installedWh,installedAh,usableWh,daysAchieved,reqModules,meetsDays,modules:S.battModules});
   setHTML('out-battery',
-    mcard('Total daily load','Wh/day',f(totalLoadWh,0),`water ${f(waterWhDay,0)} + other ${f(S.otherLoadsWh,0)} + fan ${f(fanWhDay,0)}`) +
+    mcard('Total daily load','Wh/day',f(totalLoadWh,0),`water ${f(waterWhDay,0)} + house ${f(houseWh,0)}`) +
     mcard('Installed pack','kWh',f(installedWh/1000,2),`${S.battModules}× V5° · ${f(installedAh,0)} Ah`) +
     mcard('Autonomy','days',f(daysAchieved,1),`target ${f(S.powerDays,1)} d (power)`) +
     mcard('Modules for target','×',reqModules,meetsDays?`✓ ${S.battModules} installed`:`✗ need ${reqModules}, have ${S.battModules}`) +
@@ -1143,6 +1247,9 @@ function recalc(){
   buildGpmBtns(); buildTempBtns(); buildShapeBtns(); buildHeaderBtns();
   renderHwSizing(); renderHwHeater(); renderHwInsulation(); renderHwTradeoff(); renderHwWall();
   renderShowerHeadTable();
+
+  // ---------- ENERGY & CONTROL ----------
+  renderEnergy();
 
   // ---------- LIVE DEPENDENCY DIAGRAM ----------
   renderDiagram();
@@ -1449,6 +1556,58 @@ function renderPumpMath(){
   host.innerHTML=h;
 }
 
+// ---- Energy & Control tab: control logic + daily energy profile ----
+function renderEnergy(){
+  buildControlBtns();
+  const hwHeat=R.heatEnergyWh||0, total=R.totalLoadWh||0, solarDay=R.solarWhDay||0;
+  const nonHw=Math.max(0,total-hwHeat);
+  const thermalCapWh=heatWh(S.tankGal,Math.max(0,S.boostSetpointF-S.setpointF));
+  const surplusAfterLoads=Math.max(0,solarDay-nonHw);
+  const tb=S.controlMode==='thermal-battery';
+  const hwSolar=tb?Math.min(hwHeat,surplusAfterLoads):0;
+  const hwBatt=hwHeat-hwSolar;
+  Object.assign(R,{hwSolar,hwBatt,thermalCapWh});
+  setHTML('control-logic',
+    (tb
+      ? `<div class="ifthen"><span class="ifk">IF</span> battery healthy <b>and</b> solar in surplus (midday) <span class="ifk">→</span> heat the tank toward the <b>boost ${T(S.boostSetpointF)}</b>, banking up to <b>${f(thermalCapWh,0)} Wh</b> as heat.</div>`+
+        `<div class="ifthen"><span class="ifk">ELSE&nbsp;IF</span> tank ≤ <b>floor ${T(S.setpointF)}</b> <span class="ifk">→</span> heat from the battery to defend the floor (Legionella-safe, a shower is always ready).</div>`+
+        `<div class="ifthen"><span class="ifk">ELSE</span> <span class="ifk">→</span> element off; the tank coasts from boost down toward the floor, delivering stored heat through the TMV.</div>`
+      : `<div class="ifthen"><span class="ifk">FIXED</span> <span class="ifk">→</span> hold the tank at <b>${T(S.setpointF)}</b> around the clock; the element fires from whatever source is available. Simple, but no solar load-shifting.</div>`)
+  );
+  setHTML('out-control',
+    mcard('Hot water from solar','Wh/day',f(hwSolar,0),tb?'banked from surplus':'fixed — not shifted') +
+    mcard('Hot water from battery','Wh/day',f(hwBatt,0),'defends the floor') +
+    mcard('Tank thermal buffer','Wh',f(thermalCapWh,0),`${T(S.setpointF)}→${T(S.boostSetpointF)}`) +
+    mcard('Solar surplus','Wh/day',f(surplusAfterLoads,0),'after non-HW loads')
+  );
+  renderEnergyChart();
+}
+function renderEnergyChart(){
+  const host=el('energy-chart'); if(!host) return;
+  const byCat=loadWhByCat();
+  const dayWh={hotwater:R.heatEnergyWh||0, standby:R.standbyWhDay||0, pump:R.pumpWhDay||0,
+    cook:byCat.cook||0, fridge:byCat.fridge||0, light:byCat.light||0, plug:byCat.plug||0, hvac:byCat.hvac||0, fan:byCat.fan||0};
+  const order=['hotwater','standby','pump','cook','fridge','light','plug','hvac','fan'];
+  const prof={}; order.forEach(k=>prof[k]=loadProfile(LOAD_CATS[k].prof).map(x=>x*dayWh[k]));
+  const sol=solarProfile().map(x=>x*(R.solarWhDay||0));
+  let maxY=0; for(let h=0;h<24;h++){let s=0;order.forEach(k=>s+=prof[k][h]);maxY=Math.max(maxY,s,sol[h]);}
+  maxY=(maxY*1.1)||100;
+  const W=720,H=300,PX=46,PB=28,PT=10,PR=12, bw=(W-PX-PR)/24;
+  const X=h=>PX+h*bw, Y=v=>H-PB-(v/maxY)*(H-PB-PT);
+  let s=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:640px;">`;
+  for(let i=0;i<=4;i++){const gy=PT+i*(H-PB-PT)/4;s+=`<line x1="${PX}" y1="${gy}" x2="${W-PR}" y2="${gy}" stroke="var(--color-border-tertiary)" stroke-width="0.5"/><text x="${PX-5}" y="${gy+3}" text-anchor="end" font-size="9" fill="var(--color-text-tertiary)">${Math.round(maxY*(1-i/4))}</text>`;}
+  for(let h=0;h<=24;h+=3){s+=`<text x="${X(h)}" y="${H-PB+14}" text-anchor="middle" font-size="9" fill="var(--color-text-tertiary)">${h}h</text>`;}
+  for(let h=0;h<24;h++){let yb=0;order.forEach(k=>{const v=prof[k][h];if(v<=0)return;const y0=Y(yb),y1=Y(yb+v);s+=`<rect x="${X(h)+0.5}" y="${y1}" width="${bw-1}" height="${Math.max(0,y0-y1)}" fill="${LOAD_CATS[k].color}"/>`;yb+=v;});}
+  let pts=''; for(let h=0;h<24;h++){pts+=`${X(h)+bw/2},${Y(sol[h])} `;}
+  s+=`<polyline points="${pts.trim()}" fill="none" stroke="#f5b301" stroke-width="2.5"/>`;
+  s+=`<line x1="${PX}" y1="${H-PB}" x2="${W-PR}" y2="${H-PB}" stroke="var(--color-border-secondary)"/>`;
+  s+=`<text x="${PX-5}" y="${PT+3}" text-anchor="end" font-size="9" fill="var(--color-text-tertiary)">W</text></svg>`;
+  let leg='<div class="chart-legend">';
+  order.forEach(k=>{leg+=`<span><span class="sw" style="background:${LOAD_CATS[k].color};"></span>${LOAD_CATS[k].label}</span>`;});
+  leg+=`<span><span style="display:inline-block;width:16px;border-top:2.5px solid #f5b301;vertical-align:middle;margin-right:4px;"></span>Solar generation</span></div>`;
+  host.innerHTML=s+leg;
+}
+
 // ============================================================================
 // LIVE DEPENDENCY DIAGRAM — SVG rendered from S/R on every recalc().
 // 5 subsystem lanes; vertical arrows = calc order in lane; orange = hand-offs.
@@ -1526,7 +1685,7 @@ function renderDiagram(){
   vEdge('p_in','p_rh');vEdge('p_rh','p_hy');vEdge('p_hy','p_el');vEdge('p_el','p_op');vEdge('p_op','p_fl');
   // lane 4: power
   const bOK=R.waterWhDay<=S.budgetWh, dOK=R.meetsDays;
-  node('w_in',3,36,54,[`IN: ${S.busVoltage} V · budget ${f(S.budgetWh,0)} Wh`,`other ${f(S.otherLoadsWh,0)} Wh · fan ${f(R.fanWhDay,0)} Wh`,`${S.battModules}× V5° · DoD ${S.batteryDoDPct}% · eff ${S.systemEffPct}%`],'in');
+  node('w_in',3,36,54,[`IN: ${S.busVoltage} V · budget ${f(S.budgetWh,0)} Wh`,`house loads ${f(houseLoadsWh(),0)} Wh`,`${S.battModules}× V5° · DoD ${S.batteryDoDPct}% · eff ${S.systemEffPct}%`],'in');
   node('w_ww',3,108,40,[`waterWh = ${f(R.waterWhDay,0)} Wh/d`,`${f(R.balancePct,0)}% of budget ${bOK?'✓':'✗ OVER'}`],bOK?'key':'flag');
   node('w_tl',3,166,28,[`totalLoad = ${f(R.totalLoadWh,0)} Wh/d`],'calc');
   node('w_us',3,212,28,[`usable = ${f(R.usableWh/1000,2)} kWh`],'calc');
@@ -1582,7 +1741,7 @@ let booted = false;
 function setStatus(msg,icon){ setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`); }
 function save(){
   try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({v:4, S, fixtures, showerHeads, pumpCurve, activeTab, hwTab, unitSys}));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({v:5, S, fixtures, showerHeads, pumpCurve, loads, activeTab, hwTab, unitSys}));
     if(booted) setStatus('Auto-saved','check');
   }catch(e){ /* private mode / storage disabled — run without persistence */ }
 }
@@ -1596,6 +1755,7 @@ function load(){
     if(d && Array.isArray(d.fixtures)) fixtures = d.fixtures;
     if(d && Array.isArray(d.showerHeads)) showerHeads = d.showerHeads;
     if(d && Array.isArray(d.pumpCurve)) pumpCurve = d.pumpCurve;
+    if(d && Array.isArray(d.loads)) loads = d.loads;
     if(d && d.activeTab) activeTab = d.activeTab;
     if(d && typeof d.hwTab==='number') hwTab = d.hwTab;
     if(d && (d.unitSys==='metric'||d.unitSys==='imperial')) unitSys = d.unitSys;
@@ -1607,6 +1767,7 @@ function resetDefaults(){
   fixtures    = JSON.parse(JSON.stringify(DEFAULTS.fixtures));
   showerHeads = JSON.parse(JSON.stringify(DEFAULTS.showerHeads));
   pumpCurve   = JSON.parse(JSON.stringify(DEFAULTS.pumpCurve));
+  loads       = JSON.parse(JSON.stringify(DEFAULTS.loads));
   if(DEFAULTS.unitSys) unitSys = DEFAULTS.unitSys;
   try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
   updUnitBtn();
@@ -1621,6 +1782,7 @@ const DEFAULTS = {
   fixtures:    JSON.parse(JSON.stringify(fixtures)),
   showerHeads: JSON.parse(JSON.stringify(showerHeads)),
   pumpCurve:   JSON.parse(JSON.stringify(pumpCurve)),
+  loads:       JSON.parse(JSON.stringify(loads)),
   unitSys:     unitSys,
 };
 
@@ -1634,6 +1796,7 @@ const DEFAULTS_KEY = 'uplift-water-planner-defaults-v1';
     if(Array.isArray(d.fixtures)) DEFAULTS.fixtures=d.fixtures;
     if(Array.isArray(d.showerHeads)) DEFAULTS.showerHeads=d.showerHeads;
     if(Array.isArray(d.pumpCurve)) DEFAULTS.pumpCurve=d.pumpCurve;
+    if(Array.isArray(d.loads)) DEFAULTS.loads=d.loads;
     if(d.unitSys) DEFAULTS.unitSys=d.unitSys;
   }catch(e){}
 })();
@@ -1644,9 +1807,9 @@ function closePwModal(){const o=el('pw-overlay');if(o)o.style.display='none';}
 function confirmSetDefault(){
   const v=(el('pw-input')||{}).value;
   if(v!=='1776'){const m=el('pw-msg');if(m)m.textContent='Incorrect password.';return;}
-  const snap={S:JSON.parse(JSON.stringify(S)),fixtures:JSON.parse(JSON.stringify(fixtures)),showerHeads:JSON.parse(JSON.stringify(showerHeads)),pumpCurve:JSON.parse(JSON.stringify(pumpCurve)),unitSys};
+  const snap={S:JSON.parse(JSON.stringify(S)),fixtures:JSON.parse(JSON.stringify(fixtures)),showerHeads:JSON.parse(JSON.stringify(showerHeads)),pumpCurve:JSON.parse(JSON.stringify(pumpCurve)),loads:JSON.parse(JSON.stringify(loads)),unitSys};
   try{localStorage.setItem(DEFAULTS_KEY,JSON.stringify(snap));}catch(e){}
-  Object.assign(DEFAULTS.S,snap.S);DEFAULTS.fixtures=snap.fixtures;DEFAULTS.showerHeads=snap.showerHeads;DEFAULTS.pumpCurve=snap.pumpCurve;DEFAULTS.unitSys=snap.unitSys;
+  Object.assign(DEFAULTS.S,snap.S);DEFAULTS.fixtures=snap.fixtures;DEFAULTS.showerHeads=snap.showerHeads;DEFAULTS.pumpCurve=snap.pumpCurve;DEFAULTS.loads=snap.loads;DEFAULTS.unitSys=snap.unitSys;
   closePwModal();setStatus('Saved as new default baseline','lock');
 }
 // ---- battery spec / parameters modal ----
@@ -1661,6 +1824,7 @@ if(!restored){   // fresh browser: adopt the (possibly admin-set) default baseli
   fixtures    = JSON.parse(JSON.stringify(DEFAULTS.fixtures));
   showerHeads = JSON.parse(JSON.stringify(DEFAULTS.showerHeads));
   pumpCurve   = JSON.parse(JSON.stringify(DEFAULTS.pumpCurve));
+  loads       = JSON.parse(JSON.stringify(DEFAULTS.loads));
   if(DEFAULTS.unitSys) unitSys=DEFAULTS.unitSys;
 }
 updUnitBtn();
