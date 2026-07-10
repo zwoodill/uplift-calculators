@@ -116,6 +116,9 @@ table.tbl input[type=text]{font-family:var(--font-sans);font-size:12.5px;width:1
   padding:4px 6px;border-radius:5px;border:.5px solid var(--color-border-secondary);
   background:var(--color-background-primary);color:var(--color-text-primary);}
 .tblwrap{overflow-x:auto;}
+/* fixture table: center each column so headers sit over their inputs (name column stays left) */
+#fixture-table th,#fixture-table td{text-align:center;}
+#fixture-table th:first-child,#fixture-table td:first-child{text-align:left;}
 .btn{font-size:12px;font-family:var(--font-sans);padding:5px 10px;border-radius:6px;cursor:pointer;
   border:.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary);}
 .btn.tiny{padding:3px 7px;font-size:11px;}
