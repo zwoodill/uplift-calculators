@@ -593,7 +593,7 @@ svg{display:block;max-width:100%;height:auto;}
     </div>
   </section>
 
-  <p class="footnote">Part of the Uplift micro-home planning tools. Self-contained; inputs auto-save in this browser (use <b>Reset to defaults</b> to clear). Deploy: <code>uplift-calculators</code> → GitHub Pages → Confluence iframe.</p>
+  <p class="footnote"><b id="app-version"></b> · Part of the Uplift micro-home planning tools. Self-contained; inputs auto-save in this browser (use <b>Reset to defaults</b> to clear). Deploy: <code>uplift-calculators</code> → GitHub Pages → Confluence iframe.</p>
 
 </div>
 
@@ -1767,6 +1767,7 @@ function renderCompliance(){
 // Scoped per origin: the Confluence/GitHub-Pages version persists across reloads
 // there; the local file:// copy keeps its own separate memory.
 const STORAGE_KEY = 'uplift-water-planner-v1';
+const APP_VERSION = 'v31';   // bump with each deploy (matches the Confluence iframe ?v tag)
 let booted = false;
 function setStatus(msg,icon){ setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`); }
 function save(){
@@ -1848,6 +1849,7 @@ function closeBattModal(){const o=el('batt-overlay');if(o)o.style.display='none'
 function openDiagModal(){const o=el('diag-overlay');if(o)o.style.display='flex';}
 function closeDiagModal(){const o=el('diag-overlay');if(o)o.style.display='none';}
 
+setHTML('app-version', APP_VERSION);
 const restored = load();
 if(!restored){   // fresh browser: adopt the (possibly admin-set) default baseline
   Object.assign(S, JSON.parse(JSON.stringify(DEFAULTS.S)));
