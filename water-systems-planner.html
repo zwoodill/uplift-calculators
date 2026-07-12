@@ -528,7 +528,31 @@ svg{display:block;max-width:100%;height:auto;}
         <div class="btn-row" id="header-btns"></div>
       </div>
       <div id="grp-pump"></div>
-      <div style="margin-top:12px;font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;">Candidate pump curve — flow vs head. Editable operating points:</div>
+      <div style="margin-top:14px;font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;"><b>Pump library</b> — the selected pump (radio) drives all sizing math; the rest draw faint on the chart so you can compare candidates.</div>
+      <div id="pump-lib"></div>
+      <button class="btn" onclick="addPumpCandidate('',[{q:0,h:80},{q:2,h:60},{q:4,h:30},{q:5,h:0}])">+ blank pump</button>
+      <details style="margin-top:10px;">
+        <summary style="cursor:pointer;font-size:12px;color:var(--color-text-info);">Import a manufacturer curve — drag &amp; drop, paste, or pick a file</summary>
+        <div id="pump-drop" ondragover="event.preventDefault();this.dataset.hot='1';" ondragleave="this.dataset.hot='0';" ondrop="pumpDrop(event)"
+             style="margin-top:8px;border:1.5px dashed var(--color-border-primary);border-radius:8px;padding:16px;text-align:center;font-size:12px;color:var(--color-text-secondary);">
+          Drop a <b>CSV / text</b> file of <code>flow, head</code> pairs here — or a <b>datasheet image</b> to trace over.<br>
+          <input type="file" accept=".csv,.txt,.tsv,image/*" onchange="handlePumpFiles(this.files)" style="margin-top:8px;">
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:12px;">
+          <label>Name <input type="text" id="pump-import-name" placeholder="e.g. Shurflo 5900" style="width:140px;"></label>
+          <label>Flow unit <select id="pump-import-fu"><option value="gpm">GPM</option><option value="lpm">L/min</option><option value="m3h">m³/h</option></select></label>
+          <label>Head unit <select id="pump-import-hu"><option value="ft">ft</option><option value="m">m</option><option value="psi">psi</option><option value="bar">bar</option><option value="kpa">kPa</option></select></label>
+        </div>
+        <textarea id="pump-import-ta" rows="4" placeholder="Paste points, one pair per line:&#10;0, 45&#10;2, 38&#10;4, 22&#10;5, 8" style="width:100%;box-sizing:border-box;margin-top:8px;font-family:var(--font-mono);font-size:12px;"></textarea>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+          <button class="btn" onclick="importPumpText()">Import points</button>
+          <span id="pump-import-msg" class="footnote"></span>
+        </div>
+        <div id="pump-bg-ctrl" class="footnote" style="display:none;margin-top:8px;">Datasheet overlay opacity
+          <input type="range" min="0" max="1" step="0.05" value="0.5" oninput="pumpBgOpacity=+this.value;recalc();" style="vertical-align:middle;">
+          <button class="btn tiny" onclick="pumpBgImg=null;this.parentNode.style.display='none';recalc();">clear image</button></div>
+      </details>
+      <div style="margin-top:12px;font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;">Active pump curve — flow vs head. Editable operating points:</div>
       <div id="pump-curve-editor"></div>
       <button class="btn" onclick="addCurvePoint()">+ add point</button>
       <div style="margin-top:14px;" id="pump-chart"></div>
@@ -657,7 +681,11 @@ let showerHeads = [
 ];
 
 // representative 48V DC booster: ~55 psi (127 ft) shutoff, ~40 psi (92 ft) at 3 GPM — placeholder until a real pump is chosen
-let pumpCurve = [ {q:0,h:127},{q:1,h:118},{q:2,h:106},{q:3,h:92},{q:4,h:60},{q:5,h:20} ];
+// Pump library: multiple candidate curves; the ACTIVE one drives all sizing math,
+// the rest draw faint on the chart for comparison. `pumpCurve` always points at the active curve.
+let pumpLibrary = [ {name:'Demo 48 V booster', curve:[ {q:0,h:127},{q:1,h:118},{q:2,h:106},{q:3,h:92},{q:4,h:60},{q:5,h:20} ]} ];
+let activePump = 0;
+let pumpCurve = pumpLibrary[activePump].curve;   // reference to the active candidate's curve
 
 // electrical loads (placeholder — refine with EE). w=watts, hrs=on-hours/day, cat=category
 let loads = [
@@ -674,6 +702,8 @@ let activeTab = 'summary';
 let hwTab = 0;   // hot-water sub-tab index
 let energyZoom = 1;   // horizontal zoom for the daily energy chart
 let pumpGeom = null;  // pump-chart geometry, for the hover/drag probe
+let pumpBgImg = null; // datasheet image (dataURL) drawn behind the chart for tracing
+let pumpBgOpacity = 0.5;
 let occEqG = 2;  // water-equivalent occupancy (adults + guests + weighted children); set in recalc
 
 // results bucket populated by recalc(), read by summary/other panes
@@ -909,6 +939,7 @@ function renderInputs(){
   }
   renderFixtureTable();
   renderShowerHeadTable();
+  renderPumpLib();
   renderCurveEditor();
   renderLoadsTable();
 }
@@ -1023,6 +1054,78 @@ function updCurveQ(i,v){pumpCurve[i].q=uFli(parseFloat(v));recalc();}
 function updCurveH(i,v){pumpCurve[i].h=uHi(parseFloat(v));recalc();}
 function addCurvePoint(){const l=pumpCurve[pumpCurve.length-1]||{q:0,h:0};pumpCurve.push({q:l.q+1,h:Math.max(0,l.h-10)});renderCurveEditor();recalc();}
 function rmCurve(i){if(pumpCurve.length>2){pumpCurve.splice(i,1);renderCurveEditor();recalc();}}
+
+// ---- pump library (candidates + manufacturer-curve import) ----
+function reptrPump(){                                            // keep pumpCurve pointing at the active candidate
+  if(!Array.isArray(pumpLibrary)||!pumpLibrary.length) pumpLibrary=[{name:'Pump 1',curve:[{q:0,h:80},{q:5,h:0}]}];
+  if(activePump<0||activePump>=pumpLibrary.length) activePump=0;
+  pumpCurve=pumpLibrary[activePump].curve;
+}
+function setActivePump(i){ activePump=i; reptrPump(); renderPumpLib(); renderCurveEditor(); recalc(); save(); }
+function addPumpCandidate(name,curve){
+  pumpLibrary.push({name:name||('Pump '+(pumpLibrary.length+1)), curve:curve.map(p=>({q:p.q,h:p.h}))});
+  activePump=pumpLibrary.length-1; reptrPump();
+  renderPumpLib(); renderCurveEditor(); recalc(); save();
+}
+function removePumpCandidate(i){
+  if(pumpLibrary.length<=1) return;
+  pumpLibrary.splice(i,1);
+  if(activePump>=pumpLibrary.length) activePump=pumpLibrary.length-1;
+  reptrPump(); renderPumpLib(); renderCurveEditor(); recalc(); save();
+}
+function renamePump(i,v){ if(pumpLibrary[i]){pumpLibrary[i].name=v; save();} }
+function renderPumpLib(){
+  const host=el('pump-lib'); if(!host) return;
+  let h='';
+  pumpLibrary.forEach((p,i)=>{
+    const on=i===activePump;
+    h+=`<div class="pumprow" style="align-items:center;${on?'background:var(--color-background-info);border-radius:6px;padding:2px 6px;':'padding:2px 6px;'}">
+      <input type="radio" name="activepump" ${on?'checked':''} onclick="setActivePump(${i})" title="use this pump for sizing" style="flex:0 0 auto;">
+      <input type="text" value="${String(p.name||'').replace(/"/g,'&quot;')}" onchange="renamePump(${i},this.value)" title="pump name" style="flex:1 1 auto;">
+      <span style="font-size:11px;color:var(--color-text-tertiary);flex:0 0 auto;white-space:nowrap;">${p.curve.length} pts</span>
+      <button class="btn tiny" onclick="removePumpCandidate(${i})" ${pumpLibrary.length<=1?'disabled':''} title="remove">✕</button></div>`;
+  });
+  setHTML('pump-lib',h);
+}
+// parse pasted/dropped text into {q,h} points; convert from chosen units to canonical GPM / ft
+const FLOW2GPM={gpm:1, lpm:1/3.785411784, m3h:4.402867539};
+const HEAD2FT ={ft:1, m:3.280839895, psi:2.306726, bar:33.4554, kpa:0.334554};
+function parsePumpText(text, fu, hu){
+  const fc=FLOW2GPM[fu]||1, hc=HEAD2FT[hu]||1, pts=[];
+  String(text).split(/\r?\n/).forEach(line=>{
+    const nums=(line.match(/-?\d+(?:\.\d+)?/g)||[]).map(Number);
+    if(nums.length>=2 && isFinite(nums[0]) && isFinite(nums[1])) pts.push({q:nums[0]*fc, h:nums[1]*hc});
+  });
+  pts.sort((a,b)=>a.q-b.q);
+  const out=[]; let last=NaN;
+  pts.forEach(p=>{ if(!(Math.abs(p.q-last)<1e-9)){ out.push({q:+p.q.toFixed(4), h:+p.h.toFixed(3)}); last=p.q; } });
+  return out;
+}
+function importPumpText(){
+  const ta=el('pump-import-ta'); if(!ta) return;
+  const fu=el('pump-import-fu').value, hu=el('pump-import-hu').value;
+  const nm=(el('pump-import-name').value||'').trim();
+  const pts=parsePumpText(ta.value, fu, hu);
+  if(pts.length<2){ setHTML('pump-import-msg','<span style="color:var(--color-text-danger)">Need at least 2 flow,head pairs — one per line (e.g. “0, 45”).</span>'); return; }
+  addPumpCandidate(nm||('Imported '+(pumpLibrary.length+1)), pts);
+  ta.value=''; el('pump-import-name').value='';
+  setHTML('pump-import-msg', `<span style="color:var(--color-text-success)">Imported ${pts.length} points → set as active.</span>`);
+}
+function handlePumpFiles(files){
+  if(!files||!files.length) return;
+  const file=files[0], fu=el('pump-import-fu').value, hu=el('pump-import-hu').value, rd=new FileReader();
+  if((file.type||'').indexOf('image/')===0){
+    rd.onload=e=>{ pumpBgImg=e.target.result; const c=el('pump-bg-ctrl'); if(c)c.style.display=''; setHTML('pump-import-msg','<span style="color:var(--color-text-secondary)">Datasheet image loaded behind the chart — set the flow/head max to match its axes, then trace points into the editor. Visual only.</span>'); recalc(); };
+    rd.readAsDataURL(file); return;
+  }
+  rd.onload=e=>{ const pts=parsePumpText(e.target.result,fu,hu); if(pts.length<2){ setHTML('pump-import-msg','<span style="color:var(--color-text-danger)">Couldn’t find 2+ flow,head pairs in that file.</span>'); return; } addPumpCandidate(file.name.replace(/\.[^.]+$/,''),pts); setHTML('pump-import-msg',`<span style="color:var(--color-text-success)">Imported ${pts.length} points from ${file.name}.</span>`); };
+  rd.readAsText(file);
+}
+function pumpDrop(e){
+  e.preventDefault(); const dz=el('pump-drop'); if(dz)dz.dataset.hot='0';
+  if(e.dataTransfer.files && e.dataTransfer.files.length){ handlePumpFiles(e.dataTransfer.files); return; }
+  const txt=e.dataTransfer.getData('text'); if(txt){ el('pump-import-ta').value=txt; setHTML('pump-import-msg','Text dropped in — pick the units below and click Import.'); }
+}
 
 // ---- pump / system curve ----
 function pumpHead(q){
@@ -1368,18 +1471,30 @@ function meta(l,v){return `<div class="meta-item"><div class="meta-label">${l}</
 // ---- pump chart ----
 function renderPumpChart(op){
   const W=680,H=280,pad=44;
-  const qmax=(Math.max(...pumpCurve.map(p=>p.q),op.q)*1.1)||5;
-  const hmax=(Math.max(...pumpCurve.map(p=>p.h),sysHead(qmax))*1.1)||80;
+  const allPts=(pumpLibrary||[]).flatMap(p=>p.curve||[]);
+  const qmax=(Math.max(...allPts.map(p=>p.q),op.q)*1.1)||5;
+  const hmax=(Math.max(...allPts.map(p=>p.h),sysHead(qmax))*1.1)||80;
   pumpGeom={W,H,pad,qmax,hmax};                       // for the hover/drag probe
   const X=q=>pad+(q/qmax)*(W-pad-12), Y=h=>H-pad-(h/hmax)*(H-pad-12);
   const cs=[...pumpCurve].sort((a,b)=>a.q-b.q);
   const pumpPath=cs.map((p,i)=>(i?'L':'M')+X(p.q)+' '+Y(p.h)).join(' ');
+  // faint comparison curves for the other candidates
+  let others='';
+  (pumpLibrary||[]).forEach((p,i)=>{ if(i===activePump||!(p.curve||[]).length) return;
+    const c=[...p.curve].sort((a,b)=>a.q-b.q);
+    others+=`<path d="${c.map((pt,j)=>(j?'L':'M')+X(pt.q)+' '+Y(pt.h)).join(' ')}" fill="none" stroke="var(--color-text-tertiary)" stroke-width="1.25" stroke-dasharray="2 3" opacity="0.75"/>`;
+    const lp=c[c.length-1];
+    others+=`<text x="${X(lp.q)-4}" y="${Y(lp.h)-4}" text-anchor="end" font-size="9" fill="var(--color-text-tertiary)">${String(p.name||'').slice(0,18)}</text>`;
+  });
+  const bg = pumpBgImg ? `<image href="${pumpBgImg}" x="${pad}" y="${pad}" width="${W-pad-12}" height="${H-2*pad}" preserveAspectRatio="none" opacity="${pumpBgOpacity}"/>` : '';
   let sysPath='';for(let q=0;q<=qmax;q+=qmax/40)sysPath+=(sysPath?'L':'M')+X(q)+' '+Y(sysHead(q));
   let grid='';for(let i=0;i<=4;i++){const gy=pad+i*(H-pad-12)/4;grid+=`<line x1="${pad}" y1="${gy}" x2="${W-12}" y2="${gy}" stroke="var(--color-border-tertiary)" stroke-width="0.5"/>`;}
   setHTML('pump-chart',`<svg id="pump-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Pump and system curves" style="touch-action:none;">
+    ${bg}
     ${grid}
     <line x1="${pad}" y1="${H-pad}" x2="${W-12}" y2="${H-pad}" stroke="var(--color-border-secondary)"/>
     <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${H-pad}" stroke="var(--color-border-secondary)"/>
+    ${others}
     <path d="${pumpPath}" fill="none" stroke="var(--color-text-info)" stroke-width="2"/>
     <path d="${sysPath}" fill="none" stroke="var(--color-text-warning)" stroke-width="2" stroke-dasharray="5 4"/>
     <circle cx="${X(op.q)}" cy="${Y(op.h)}" r="5" fill="var(--color-text-success)"/>
@@ -1851,12 +1966,12 @@ function renderCompliance(){
 // Scoped per origin: the Confluence/GitHub-Pages version persists across reloads
 // there; the local file:// copy keeps its own separate memory.
 const STORAGE_KEY = 'uplift-water-planner-v3';   // v3: added fixture `auto` flag + reviewer fixes — discard stale state
-const APP_VERSION = 'v37';   // bump with each deploy (matches the Confluence iframe ?v tag)
+const APP_VERSION = 'v38';   // bump with each deploy (matches the Confluence iframe ?v tag)
 let booted = false;
 function setStatus(msg,icon){ setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`); }
 function save(){
   try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({v:5, S, fixtures, showerHeads, pumpCurve, loads, activeTab, hwTab, unitSys}));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({v:6, S, fixtures, showerHeads, pumpLibrary, activePump, pumpCurve, loads, activeTab, hwTab, unitSys}));
     if(booted) setStatus('Auto-saved','check');
   }catch(e){ /* private mode / storage disabled — run without persistence */ }
 }
@@ -1869,7 +1984,13 @@ function load(){
     if(d && d.S && d.S.daysAutonomy!=null && d.S.waterDays==null){ S.waterDays=d.S.daysAutonomy; S.powerDays=d.S.daysAutonomy; }  // migrate old single-autonomy saves
     if(d && Array.isArray(d.fixtures)) fixtures = d.fixtures;
     if(d && Array.isArray(d.showerHeads)) showerHeads = d.showerHeads;
-    if(d && Array.isArray(d.pumpCurve)) pumpCurve = d.pumpCurve;
+    if(d && Array.isArray(d.pumpLibrary) && d.pumpLibrary.length){          // new: full candidate library
+      pumpLibrary = d.pumpLibrary.filter(p=>p&&Array.isArray(p.curve));
+      activePump = (typeof d.activePump==='number') ? d.activePump : 0;
+      reptrPump();
+    } else if(d && Array.isArray(d.pumpCurve)){                              // migrate old single-curve saves
+      pumpLibrary = [{name:'Saved pump', curve:d.pumpCurve}]; activePump=0; reptrPump();
+    }
     if(d && Array.isArray(d.loads)) loads = d.loads;
     if(d && d.activeTab) activeTab = d.activeTab;
     if(d && typeof d.hwTab==='number') hwTab = d.hwTab;
@@ -1881,8 +2002,9 @@ function resetDefaults(){
   Object.assign(S, JSON.parse(JSON.stringify(DEFAULTS.S)));
   fixtures    = JSON.parse(JSON.stringify(DEFAULTS.fixtures));
   showerHeads = JSON.parse(JSON.stringify(DEFAULTS.showerHeads));
-  pumpCurve   = JSON.parse(JSON.stringify(DEFAULTS.pumpCurve));
+  pumpLibrary = JSON.parse(JSON.stringify(DEFAULTS.pumpLibrary)); activePump=0; reptrPump();
   loads       = JSON.parse(JSON.stringify(DEFAULTS.loads));
+  pumpBgImg   = null;
   if(DEFAULTS.unitSys) unitSys = DEFAULTS.unitSys;
   try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
   updUnitBtn();
@@ -1896,7 +2018,7 @@ const DEFAULTS = {
   S:           JSON.parse(JSON.stringify(S)),
   fixtures:    JSON.parse(JSON.stringify(fixtures)),
   showerHeads: JSON.parse(JSON.stringify(showerHeads)),
-  pumpCurve:   JSON.parse(JSON.stringify(pumpCurve)),
+  pumpLibrary: JSON.parse(JSON.stringify(pumpLibrary)),
   loads:       JSON.parse(JSON.stringify(loads)),
   unitSys:     unitSys,
 };
@@ -1910,7 +2032,8 @@ const DEFAULTS_KEY = 'uplift-water-planner-defaults-v3';   // bumped with the sc
     if(d.S) Object.assign(DEFAULTS.S, d.S);
     if(Array.isArray(d.fixtures)) DEFAULTS.fixtures=d.fixtures;
     if(Array.isArray(d.showerHeads)) DEFAULTS.showerHeads=d.showerHeads;
-    if(Array.isArray(d.pumpCurve)) DEFAULTS.pumpCurve=d.pumpCurve;
+    if(Array.isArray(d.pumpLibrary)) DEFAULTS.pumpLibrary=d.pumpLibrary;
+    else if(Array.isArray(d.pumpCurve)) DEFAULTS.pumpLibrary=[{name:'Saved pump',curve:d.pumpCurve}];
     if(Array.isArray(d.loads)) DEFAULTS.loads=d.loads;
     if(d.unitSys) DEFAULTS.unitSys=d.unitSys;
   }catch(e){}
@@ -1922,9 +2045,9 @@ function closePwModal(){const o=el('pw-overlay');if(o)o.style.display='none';}
 function confirmSetDefault(){
   const v=(el('pw-input')||{}).value;
   if(v!=='1776'){const m=el('pw-msg');if(m)m.textContent='Incorrect password.';return;}
-  const snap={S:JSON.parse(JSON.stringify(S)),fixtures:JSON.parse(JSON.stringify(fixtures)),showerHeads:JSON.parse(JSON.stringify(showerHeads)),pumpCurve:JSON.parse(JSON.stringify(pumpCurve)),loads:JSON.parse(JSON.stringify(loads)),unitSys};
+  const snap={S:JSON.parse(JSON.stringify(S)),fixtures:JSON.parse(JSON.stringify(fixtures)),showerHeads:JSON.parse(JSON.stringify(showerHeads)),pumpLibrary:JSON.parse(JSON.stringify(pumpLibrary)),loads:JSON.parse(JSON.stringify(loads)),unitSys};
   try{localStorage.setItem(DEFAULTS_KEY,JSON.stringify(snap));}catch(e){}
-  Object.assign(DEFAULTS.S,snap.S);DEFAULTS.fixtures=snap.fixtures;DEFAULTS.showerHeads=snap.showerHeads;DEFAULTS.pumpCurve=snap.pumpCurve;DEFAULTS.loads=snap.loads;DEFAULTS.unitSys=snap.unitSys;
+  Object.assign(DEFAULTS.S,snap.S);DEFAULTS.fixtures=snap.fixtures;DEFAULTS.showerHeads=snap.showerHeads;DEFAULTS.pumpLibrary=snap.pumpLibrary;DEFAULTS.loads=snap.loads;DEFAULTS.unitSys=snap.unitSys;
   closePwModal();setStatus('Saved as new default baseline','lock');
 }
 // ---- battery spec / parameters modal ----
@@ -1939,7 +2062,7 @@ if(!restored){   // fresh browser: adopt the (possibly admin-set) default baseli
   Object.assign(S, JSON.parse(JSON.stringify(DEFAULTS.S)));
   fixtures    = JSON.parse(JSON.stringify(DEFAULTS.fixtures));
   showerHeads = JSON.parse(JSON.stringify(DEFAULTS.showerHeads));
-  pumpCurve   = JSON.parse(JSON.stringify(DEFAULTS.pumpCurve));
+  pumpLibrary = JSON.parse(JSON.stringify(DEFAULTS.pumpLibrary)); activePump=0; reptrPump();
   loads       = JSON.parse(JSON.stringify(DEFAULTS.loads));
   if(DEFAULTS.unitSys) unitSys=DEFAULTS.unitSys;
 }
