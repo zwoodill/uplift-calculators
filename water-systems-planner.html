@@ -531,7 +531,7 @@ svg{display:block;max-width:100%;height:auto;}
       <div style="margin-top:14px;font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;"><b>Pump library</b> — the selected pump (radio) drives all sizing math; the rest draw faint on the chart so you can compare candidates.</div>
       <div id="pump-lib"></div>
       <button class="btn" onclick="addPumpCandidate('',[{q:0,h:80},{q:2,h:60},{q:4,h:30},{q:5,h:0}])">+ blank pump</button>
-      <details style="margin-top:10px;">
+      <details style="margin-top:10px;" open>
         <summary style="cursor:pointer;font-size:12px;color:var(--color-text-info);">Import a manufacturer curve — drag &amp; drop, paste, or pick a file</summary>
         <div id="pump-drop" ondragover="event.preventDefault();this.dataset.hot='1';" ondragleave="this.dataset.hot='0';" ondrop="pumpDrop(event)"
              style="margin-top:8px;border:1.5px dashed var(--color-border-primary);border-radius:8px;padding:16px;text-align:center;font-size:12px;color:var(--color-text-secondary);">
@@ -1966,7 +1966,8 @@ function renderCompliance(){
 // Scoped per origin: the Confluence/GitHub-Pages version persists across reloads
 // there; the local file:// copy keeps its own separate memory.
 const STORAGE_KEY = 'uplift-water-planner-v3';   // v3: added fixture `auto` flag + reviewer fixes — discard stale state
-const APP_VERSION = 'v38';   // bump with each deploy (matches the Confluence iframe ?v tag)
+const APP_VERSION = 'v39';   // bump with each deploy (matches the Confluence iframe ?v tag)
+const BUILD_STAMP = '2026-07-12';   // deploy date — stamp this together with APP_VERSION / ?v so the footer proves which build is live
 let booted = false;
 function setStatus(msg,icon){ setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`); }
 function save(){
@@ -2056,7 +2057,7 @@ function closeBattModal(){const o=el('batt-overlay');if(o)o.style.display='none'
 function openDiagModal(){const o=el('diag-overlay');if(o)o.style.display='flex';}
 function closeDiagModal(){const o=el('diag-overlay');if(o)o.style.display='none';}
 
-setHTML('app-version', APP_VERSION);
+setHTML('app-version', APP_VERSION + ' · built ' + BUILD_STAMP);
 const restored = load();
 if(!restored){   // fresh browser: adopt the (possibly admin-set) default baseline
   Object.assign(S, JSON.parse(JSON.stringify(DEFAULTS.S)));
