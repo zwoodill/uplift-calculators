@@ -1966,8 +1966,8 @@ function renderCompliance(){
 // Scoped per origin: the Confluence/GitHub-Pages version persists across reloads
 // there; the local file:// copy keeps its own separate memory.
 const STORAGE_KEY = 'uplift-water-planner-v3';   // v3: added fixture `auto` flag + reviewer fixes — discard stale state
-const APP_VERSION = 'v39';   // bump with each deploy (matches the Confluence iframe ?v tag)
-const BUILD_STAMP = '2026-07-12';   // deploy date — stamp this together with APP_VERSION / ?v so the footer proves which build is live
+const APP_VERSION = 'v39';   // optional human label; the build stamp below is the source of truth
+const BUILD_STAMP = '2026-07-12 22:13 UTC (build 46)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
 let booted = false;
 function setStatus(msg,icon){ setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`); }
 function save(){
@@ -2057,7 +2057,7 @@ function closeBattModal(){const o=el('batt-overlay');if(o)o.style.display='none'
 function openDiagModal(){const o=el('diag-overlay');if(o)o.style.display='flex';}
 function closeDiagModal(){const o=el('diag-overlay');if(o)o.style.display='none';}
 
-setHTML('app-version', APP_VERSION + ' · built ' + BUILD_STAMP);
+setHTML('app-version', APP_VERSION + ' · ' + BUILD_STAMP);
 const restored = load();
 if(!restored){   // fresh browser: adopt the (possibly admin-set) default baseline
   Object.assign(S, JSON.parse(JSON.stringify(DEFAULTS.S)));
