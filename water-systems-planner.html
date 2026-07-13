@@ -548,6 +548,18 @@ svg{display:block;max-width:100%;height:auto;}
           <button class="btn" onclick="importPumpText()">Import points</button>
           <span id="pump-import-msg" class="footnote"></span>
         </div>
+        <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--color-border-tertiary);font-size:12px;color:var(--color-text-secondary);">
+          <b>No curve on the datasheet?</b> Build one from the two headline specs RV pumps always list (a diaphragm pump's shape is predictable from these):
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:6px;">
+            <label>Open flow <input type="number" id="pspec-flow" step="0.1" value="3.0" style="width:66px;"> GPM</label>
+            <label>Shutoff <input type="number" id="pspec-psi" step="1" value="55" style="width:60px;"> psi</label>
+            <label>Shape <select id="pspec-shape">
+              <option value="diaphragm">Typical diaphragm (flat, drops near shutoff)</option>
+              <option value="linear">Straight line (conservative)</option>
+            </select></label>
+            <button class="btn" onclick="buildPumpFromSpecs()">Build curve</button>
+          </div>
+        </div>
         <div id="pump-bg-ctrl" class="footnote" style="display:none;margin-top:8px;">Datasheet overlay opacity
           <input type="range" min="0" max="1" step="0.05" value="0.5" oninput="pumpBgOpacity=+this.value;recalc();" style="vertical-align:middle;">
           <button class="btn tiny" onclick="pumpBgImg=null;this.parentNode.style.display='none';recalc();">clear image</button></div>
@@ -1110,6 +1122,23 @@ function importPumpText(){
   addPumpCandidate(nm||('Imported '+(pumpLibrary.length+1)), pts);
   ta.value=''; el('pump-import-name').value='';
   setHTML('pump-import-msg', `<span style="color:var(--color-text-success)">Imported ${pts.length} points → set as active.</span>`);
+}
+// synthesize a curve from just open flow (GPM at ~0 psi) + shutoff pressure (psi) when no curve is published
+function buildPumpFromSpecs(){
+  const q0=parseFloat((el('pspec-flow')||{}).value), psi=parseFloat((el('pspec-psi')||{}).value);
+  const shape=(el('pspec-shape')||{}).value;
+  if(!(q0>0)||!(psi>0)){ setHTML('pump-import-msg','<span style="color:var(--color-text-danger)">Enter a positive open flow (GPM) and shutoff pressure (psi).</span>'); return; }
+  const hmax=psi*HEAD2FT.psi;                                   // psi → ft of head
+  let pts;
+  if(shape==='linear'){
+    pts=[{q:0,h:+hmax.toFixed(2)},{q:q0,h:0}];                  // straight line: conservative
+  }else{
+    const n=2.5, fr=[1.0,0.95,0.85,0.7,0.5,0.0];               // diaphragm: flow flat at low P, drops steeply near shutoff
+    pts=fr.map(fp=>({q:+(q0*(1-Math.pow(fp,n))).toFixed(3), h:+(fp*hmax).toFixed(2)}));
+  }
+  if(psi>S.maxSysPsi) setHTML('pump-import-msg', `<span style="color:var(--color-text-warning)">Built estimate — note shutoff ${f(psi,0)} psi exceeds the ${f(S.maxSysPsi,0)} psi HUD ceiling; set the pressure switch lower. Replace with real datasheet points when you can.</span>`);
+  else setHTML('pump-import-msg', `<span style="color:var(--color-text-warning)">Built an estimated ${shape==='linear'?'linear':'diaphragm'} curve from open flow + shutoff — replace with real datasheet points when you can.</span>`);
+  addPumpCandidate(`Est. ${f(q0,1)} GPM / ${f(psi,0)} psi`, pts);
 }
 function handlePumpFiles(files){
   if(!files||!files.length) return;
@@ -1967,7 +1996,7 @@ function renderCompliance(){
 // there; the local file:// copy keeps its own separate memory.
 const STORAGE_KEY = 'uplift-water-planner-v3';   // v3: added fixture `auto` flag + reviewer fixes — discard stale state
 const APP_VERSION = 'v39';   // optional human label; the build stamp below is the source of truth
-const BUILD_STAMP = '2026-07-12 22:13 UTC (build 46)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
+const BUILD_STAMP = '2026-07-13 17:12 UTC (build 47)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
 let booted = false;
 function setStatus(msg,icon){ setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`); }
 function save(){
