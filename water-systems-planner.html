@@ -268,6 +268,51 @@ svg{display:block;max-width:100%;height:auto;}
     </div>
   </div>
 
+  <!-- pump-curve graph digitizer -->
+  <div id="dig-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;align-items:center;justify-content:center;padding:1rem;overflow:auto;">
+    <div class="card" style="max-width:780px;width:100%;margin:0;max-height:94vh;overflow:auto;">
+      <div class="section-title"><i class="ti ti-chart-dots"></i>Digitize a pump-curve graph</div>
+      <div class="info-bar" style="margin-bottom:12px;">Load a screenshot of a manufacturer's flow-vs-pressure graph, mark two known values on each axis, then trace the curve — the tool reads off a table of points you can add to the pump library. No perfect OCR: calibrate + trace is the reliable way.</div>
+
+      <div class="stage-label" style="margin-top:0;">1 · Load the graph image</div>
+      <input type="file" id="dig-file" accept="image/*" onchange="digLoad(this.files)">
+      <div id="dig-drop" ondragover="event.preventDefault();" ondrop="digDrop(event)" style="margin-top:10px;border:1px solid var(--color-border-secondary);border-radius:8px;overflow:auto;text-align:center;background:var(--color-background-secondary);padding:6px;">
+        <canvas id="dig-canvas" onclick="digCanvasClick(event)" style="max-width:100%;cursor:crosshair;touch-action:none;"></canvas>
+      </div>
+      <div class="footnote" id="dig-status" style="margin-top:6px;">Load an image to begin.</div>
+
+      <div class="stage-label">2 · Calibrate the axes</div>
+      <div style="font-size:12px;color:var(--color-text-secondary);">For two points on each axis: type the value, click <b>set point</b>, then click that spot on the graph (e.g. where flow = 0 and where flow = 5).</div>
+      <div style="display:grid;grid-template-columns:auto 90px auto;gap:6px 8px;align-items:center;margin-top:8px;font-size:12px;max-width:340px;">
+        <span>Flow ref A</span><input type="number" id="dig-xa" placeholder="0"><button class="btn tiny" onclick="digSet('xa')">set point</button>
+        <span>Flow ref B</span><input type="number" id="dig-xb" placeholder="5"><button class="btn tiny" onclick="digSet('xb')">set point</button>
+        <span>Head ref A</span><input type="number" id="dig-ya" placeholder="0"><button class="btn tiny" onclick="digSet('ya')">set point</button>
+        <span>Head ref B</span><input type="number" id="dig-yb" placeholder="60"><button class="btn tiny" onclick="digSet('yb')">set point</button>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:12px;">
+        <label>Flow unit <select id="dig-fu"><option value="gpm">GPM</option><option value="lpm">L/min</option><option value="m3h">m³/h</option></select></label>
+        <label>Head unit <select id="dig-hu"><option value="psi">psi</option><option value="ft">ft</option><option value="m">m</option><option value="bar">bar</option><option value="kpa">kPa</option></select></label>
+      </div>
+
+      <div class="stage-label">3 · Trace the curve</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <button class="btn" onclick="digSet('color')">Pick curve colour</button>
+        <button class="btn" onclick="digAutoTrace()">Auto-trace</button>
+        <label style="font-size:12px;">tolerance <input type="range" id="dig-tol" min="10" max="120" value="45" oninput="digTolLabel()" style="vertical-align:middle;"> <span id="dig-tollab" class="footnote">45</span></label>
+        <button class="btn" onclick="digManual()">Manual click mode</button>
+        <button class="btn tiny" onclick="digClearPts()">clear</button>
+      </div>
+      <div class="footnote" style="margin-top:4px;">Auto-trace: pick the curve's colour, then it reads the line automatically (raise tolerance if it misses; a single clean-coloured curve works best). Or click along the curve in manual mode.</div>
+
+      <div class="stage-label">4 · Result</div>
+      <div id="dig-table" class="footnote">No points yet.</div>
+      <div style="display:flex;gap:10px;justify-content:space-between;margin-top:12px;flex-wrap:wrap;">
+        <button class="btn" onclick="digAddToLibrary()"><i class="ti ti-plus"></i> Add to pump library</button>
+        <button class="btn" onclick="closeDigModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div class="tabs" id="tabs"></div>
 
   <!-- ================= SUMMARY ================= -->
@@ -538,6 +583,7 @@ svg{display:block;max-width:100%;height:auto;}
           Drop a <b>CSV / text</b> file of <code>flow, head</code> pairs here — or a <b>datasheet image</b> to trace over.<br>
           <input type="file" accept=".csv,.txt,.tsv,image/*" onchange="handlePumpFiles(this.files)" style="margin-top:8px;">
         </div>
+        <div class="footnote" style="margin-top:6px;">Only have a graph image (PDF screenshot)? <button class="btn tiny" onclick="openDigModal()"><i class="ti ti-chart-dots"></i> Digitize a graph →</button></div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:12px;">
           <label>Name <input type="text" id="pump-import-name" placeholder="e.g. Shurflo 5900" style="width:140px;"></label>
           <label>Flow unit <select id="pump-import-fu"><option value="gpm">GPM</option><option value="lpm">L/min</option><option value="m3h">m³/h</option></select></label>
@@ -1154,6 +1200,98 @@ function pumpDrop(e){
   e.preventDefault(); const dz=el('pump-drop'); if(dz)dz.dataset.hot='0';
   if(e.dataTransfer.files && e.dataTransfer.files.length){ handlePumpFiles(e.dataTransfer.files); return; }
   const txt=e.dataTransfer.getData('text'); if(txt){ el('pump-import-ta').value=txt; setHTML('pump-import-msg','Text dropped in — pick the units below and click Import.'); }
+}
+
+// ---- graph digitizer: trace a pump curve off a datasheet screenshot into a table ----
+let dig = null;   // {img, cw, ch, data, mode, xa,xb,ya,yb, color, pts:[{px,py}]}
+function openDigModal(){ if(!dig) dig={mode:'idle',pts:[]}; const o=el('dig-overlay'); if(o)o.style.display='flex'; digStatus(dig.img?'Image loaded — calibrate the axes.':'Load a graph image to begin.'); }
+function closeDigModal(){ const o=el('dig-overlay'); if(o)o.style.display='none'; }
+function digStatus(m){ setHTML('dig-status', m); }
+function digTolLabel(){ const t=el('dig-tol'); if(t) setHTML('dig-tollab', t.value); }
+function digLoad(files){ if(files&&files.length) digReadImage(files[0]); }
+function digDrop(e){ e.preventDefault(); if(e.dataTransfer.files&&e.dataTransfer.files.length) digReadImage(e.dataTransfer.files[0]); }
+function digReadImage(file){
+  if(!file || (file.type||'').indexOf('image/')!==0){ digStatus('That is not an image file.'); return; }
+  const rd=new FileReader();
+  rd.onload=ev=>{ const im=new Image(); im.onload=()=>{
+    const maxW=700, sc=Math.min(1, maxW/im.width);
+    const cv=el('dig-canvas'); cv.width=Math.round(im.width*sc); cv.height=Math.round(im.height*sc);
+    const ctx=cv.getContext('2d'); ctx.drawImage(im,0,0,cv.width,cv.height);
+    dig.img=im; dig.cw=cv.width; dig.ch=cv.height;
+    dig.data=ctx.getImageData(0,0,cv.width,cv.height).data;   // image-only pixels for sampling
+    dig.mode='idle'; digStatus('Image loaded — now calibrate the axes (step 2).');
+  }; im.src=ev.target.result; };
+  rd.readAsDataURL(file);
+}
+function digCanvasClick(e){
+  if(!dig||!dig.img) return;
+  const cv=el('dig-canvas'), r=cv.getBoundingClientRect();
+  const cx=Math.round((e.clientX-r.left)*(cv.width/r.width)), cy=Math.round((e.clientY-r.top)*(cv.height/r.height));
+  const m=dig.mode;
+  if(m==='set:xa'||m==='set:xb'||m==='set:ya'||m==='set:yb'){ dig[m.slice(4)]={px:cx,py:cy}; dig.mode='idle'; digStatus('Point set. Set the remaining references, then trace.'); }
+  else if(m==='set:color'){ const i=(cy*dig.cw+cx)*4; dig.color=[dig.data[i],dig.data[i+1],dig.data[i+2]]; dig.mode='idle'; digStatus('Curve colour picked — click <b>Auto-trace</b>, or use manual mode.'); }
+  else if(m==='manual'){ dig.pts.push({px:cx,py:cy}); digStatus(dig.pts.length+' point(s) — keep clicking along the curve.'); }
+  digRedraw(); digTable();
+}
+function digSet(which){ if(!dig||!dig.img){ digStatus('Load an image first.'); return; } dig.mode='set:'+which;
+  digStatus(which==='color'?'Click on the curve line to sample its colour.':'Click the '+({xa:'first flow',xb:'second flow',ya:'first head/pressure',yb:'second head/pressure'}[which])+' reference point on the graph.'); }
+function digManual(){ if(!dig||!dig.img){ digStatus('Load an image first.'); return; } dig.mode='manual'; digStatus('Manual mode — click along the curve, low flow to high.'); }
+function digClearPts(){ if(dig){ dig.pts=[]; digRedraw(); digTable(); digStatus('Points cleared.'); } }
+function digCalibrated(){ return dig&&dig.xa&&dig.xb&&dig.ya&&dig.yb
+  && isFinite(+el('dig-xa').value)&&isFinite(+el('dig-xb').value)&&isFinite(+el('dig-ya').value)&&isFinite(+el('dig-yb').value)
+  && dig.xb.px!==dig.xa.px && dig.yb.py!==dig.ya.py; }
+function digToData(px,py){
+  const xaV=+el('dig-xa').value, xbV=+el('dig-xb').value, yaV=+el('dig-ya').value, ybV=+el('dig-yb').value;
+  return { flow: xaV+(px-dig.xa.px)*(xbV-xaV)/(dig.xb.px-dig.xa.px),
+           head: yaV+(py-dig.ya.py)*(ybV-yaV)/(dig.yb.py-dig.ya.py) };
+}
+function digAutoTrace(){
+  if(!digCalibrated()){ digStatus('Calibrate all four axis references first (step 2).'); return; }
+  if(!dig.color){ digStatus('Pick the curve colour first.'); return; }
+  const tol=+(el('dig-tol').value||45), c=dig.color, d=dig.data, cw=dig.cw;
+  const xLo=Math.max(0,Math.min(dig.xa.px,dig.xb.px)), xHi=Math.min(cw-1,Math.max(dig.xa.px,dig.xb.px));
+  const yBand=Math.abs(dig.yb.py-dig.ya.py)*0.12;
+  const yLo=Math.max(0,Math.min(dig.ya.py,dig.yb.py)-yBand), yHi=Math.min(dig.ch-1,Math.max(dig.ya.py,dig.yb.py)+yBand);
+  const raw=[];
+  for(let x=xLo;x<=xHi;x+=2){
+    const hits=[];
+    for(let y=yLo;y<=yHi;y++){ const i=(y*cw+x)*4; if(Math.abs(d[i]-c[0])+Math.abs(d[i+1]-c[1])+Math.abs(d[i+2]-c[2])<tol && d[i+3]>40) hits.push(y); }
+    if(hits.length) raw.push({px:x, py:hits[Math.floor(hits.length/2)]});
+  }
+  if(raw.length<2){ digStatus('Auto-trace found too few matching pixels — raise the tolerance or use manual mode.'); return; }
+  const N=Math.min(14,raw.length), out=[];      // downsample to ~14 evenly spaced columns
+  for(let k=0;k<N;k++) out.push(raw[Math.round(k*(raw.length-1)/(N-1))]);
+  dig.pts=out; digRedraw(); digTable(); digStatus('Auto-traced '+out.length+' points — check them against the graph, then add to the library.');
+}
+function digRedraw(){
+  if(!dig||!dig.img) return;
+  const cv=el('dig-canvas'), ctx=cv.getContext('2d'); ctx.drawImage(dig.img,0,0,dig.cw,dig.ch);
+  const tick=(p,vert,col)=>{ ctx.strokeStyle=col; ctx.lineWidth=1.5; ctx.beginPath();
+    if(vert){ ctx.moveTo(p.px,0); ctx.lineTo(p.px,dig.ch); } else { ctx.moveTo(0,p.py); ctx.lineTo(dig.cw,p.py); } ctx.stroke(); };
+  if(dig.xa) tick(dig.xa,true,'#2e8b57'); if(dig.xb) tick(dig.xb,true,'#2e8b57');
+  if(dig.ya) tick(dig.ya,false,'#1e6fd0'); if(dig.yb) tick(dig.yb,false,'#1e6fd0');
+  if(dig.pts.length){ ctx.strokeStyle='#e8590c'; ctx.lineWidth=1.5; ctx.beginPath();
+    dig.pts.forEach((p,i)=>{ i?ctx.lineTo(p.px,p.py):ctx.moveTo(p.px,p.py); }); ctx.stroke();
+    ctx.fillStyle='#e8590c'; dig.pts.forEach(p=>{ ctx.beginPath(); ctx.arc(p.px,p.py,3,0,7); ctx.fill(); }); }
+}
+function digRows(){ return dig&&digCalibrated()? dig.pts.map(p=>digToData(p.px,p.py)) : []; }
+function digTable(){
+  if(!dig||!dig.pts.length){ setHTML('dig-table','No points yet.'); return; }
+  if(!digCalibrated()){ setHTML('dig-table', dig.pts.length+' point(s) marked — finish axis calibration to read values.'); return; }
+  const fu=el('dig-fu').value, hu=el('dig-hu').value, rows=digRows();
+  setHTML('dig-table', `<table class="hwtbl" style="width:auto;"><thead><tr><th>flow (${fu==='gpm'?'GPM':fu==='lpm'?'L/min':'m³/h'})</th><th>head (${hu})</th></tr></thead><tbody>`+
+    rows.map(r=>`<tr><td style="font-family:var(--font-mono);text-align:right;">${f(r.flow,2)}</td><td style="font-family:var(--font-mono);text-align:right;">${f(r.head,1)}</td></tr>`).join('')+`</tbody></table>`);
+}
+function digAddToLibrary(){
+  if(!digCalibrated()){ digStatus('Calibrate all four axis references first.'); return; }
+  if(dig.pts.length<2){ digStatus('Trace at least 2 points first.'); return; }
+  const fu=el('dig-fu').value, hu=el('dig-hu').value, fc=FLOW2GPM[fu]||1, hc=HEAD2FT[hu]||1;
+  let pts=digRows().map(r=>({q:r.flow*fc, h:r.head*hc})).sort((a,b)=>a.q-b.q);
+  const out=[]; let last=NaN; pts.forEach(p=>{ if(!(Math.abs(p.q-last)<1e-6)){ out.push({q:+p.q.toFixed(3),h:+Math.max(0,p.h).toFixed(2)}); last=p.q; } });
+  if(out.length<2){ digStatus('Points collapsed to fewer than 2 after conversion — re-check calibration.'); return; }
+  addPumpCandidate('Digitized ('+out.length+' pts)', out);
+  closeDigModal();
+  setHTML('pump-import-msg', '<span style="color:var(--color-text-success)">Added digitized curve ('+out.length+' points) → set as active.</span>');
 }
 
 // ---- pump / system curve ----
@@ -1996,7 +2134,7 @@ function renderCompliance(){
 // there; the local file:// copy keeps its own separate memory.
 const STORAGE_KEY = 'uplift-water-planner-v3';   // v3: added fixture `auto` flag + reviewer fixes — discard stale state
 const APP_VERSION = 'v39';   // optional human label; the build stamp below is the source of truth
-const BUILD_STAMP = '2026-07-13 17:12 UTC (build 47)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
+const BUILD_STAMP = '2026-07-13 17:24 UTC (build 48)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
 let booted = false;
 function setStatus(msg,icon){ setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`); }
 function save(){
