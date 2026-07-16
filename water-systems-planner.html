@@ -124,6 +124,23 @@ table.tbl input[type=text]{font-family:var(--font-sans);font-size:12.5px;width:1
 #loads-table th:first-child,#loads-table td:first-child{text-align:left;}
 #loads-table td.name{width:34%;}
 #loads-table td.name input[type=text]{width:100%;}
+/* envelope tables: numeric data right-aligned so headers sit over their columns at any width */
+#env-compare td{text-align:right;}
+#env-compare td:first-child{text-align:left;}
+#th-breakdown td{text-align:right;}
+#th-breakdown td:first-child{text-align:left;}
+#th-breakdown tr.total td{font-weight:600;border-top:1.5px solid var(--color-border-secondary);}
+.src-badge{font-size:10px;padding:1px 6px;border-radius:8px;background:var(--color-background-secondary);border:.5px solid var(--color-border-secondary);color:var(--color-text-tertiary);white-space:nowrap;}
+.src-badge.ph{background:#FAEEDA;border-color:#FAC775;color:#854F0B;font-weight:600;}
+@media (prefers-color-scheme: dark){.src-badge.ph{background:#2e1d06;border-color:#854F0B;color:#ef9f27;}}
+#assume-body td{text-align:center;}#assume-body td:nth-child(2){text-align:left;}
+#env-framing-table th,#env-framing-table td{text-align:center;}
+#env-framing-table th:first-child,#env-framing-table td:first-child{text-align:left;}
+#env-framing-table td.name input[type=text]{width:100%;min-width:110px;}
+.reflist{font-size:12.5px;color:var(--color-text-secondary);line-height:1.75;}
+.reflist a{color:var(--color-text-info);text-decoration:none;border-bottom:1px dotted var(--color-text-info);}
+.reflist b{color:var(--color-text-primary);}
+.reflist .refblock{margin-bottom:12px;}
 .btn{font-size:12px;font-family:var(--font-sans);padding:5px 10px;border-radius:6px;cursor:pointer;
   border:.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary);}
 .btn.tiny{padding:3px 7px;font-size:11px;}
@@ -268,6 +285,40 @@ svg{display:block;max-width:100%;height:auto;}
     </div>
   </div>
 
+  <!-- assumptions backend: password-gated editor for placeholder / assumed constants -->
+  <div id="assume-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;align-items:center;justify-content:center;padding:1rem;overflow:auto;">
+    <div class="card" style="max-width:760px;width:100%;margin:0;max-height:92vh;overflow:auto;">
+      <div class="section-title"><i class="ti ti-flask"></i>Assumptions backend</div>
+      <div id="assume-gate">
+        <p style="font-size:12.5px;color:var(--color-text-secondary);margin:0 0 10px;line-height:1.6;">Enter the admin password to edit the <b>hardcoded physics &amp; reference constants</b> behind the calculators — air films, insulation R/inch, sol-air uplifts, occupant heat, climate design temps — and to flag values that still need confirmation.</p>
+        <input type="password" id="as-pw-input" placeholder="Password" onkeyup="if(event.key==='Enter')unlockAssume()"
+          style="width:100%;padding:7px 10px;border-radius:6px;border:.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-mono);">
+        <div id="as-pw-msg" style="font-size:11.5px;color:var(--color-text-danger);min-height:15px;margin:6px 0 8px;"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn" onclick="closeAssumeModal()">Cancel</button>
+          <button class="btn" onclick="unlockAssume()" style="background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-text-info);">Unlock</button>
+        </div>
+      </div>
+      <div id="assume-editor" style="display:none;">
+        <div class="info-bar" style="margin-bottom:10px;"><b>⚑ = flagged</b>: value needs confirmation before anything gets certified — <b>PLACEHOLDER</b> badges come pre-flagged. Edits apply to the whole planner instantly, auto-save in this browser, and ride along with <b>Set as default</b>. A <b style="color:var(--color-text-info);">●</b> marks a value edited away from the shipped default (hover the input for it). The steel member schedule — the other big placeholder — is edited directly on the Envelope tab.</div>
+        <div id="assume-body"></div>
+        <div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px;">
+          <button class="btn" onclick="resetAssume()"><i class="ti ti-rotate"></i> Reset all to shipped values</button>
+          <button class="btn" onclick="closeAssumeModal()">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- generic info popup — content injected from INFO_POPUPS by openInfo(key) -->
+  <div id="info-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;align-items:center;justify-content:center;padding:1rem;overflow:auto;" onclick="if(event.target===this)closeInfo()">
+    <div class="card" style="max-width:640px;width:100%;margin:0;max-height:92vh;overflow:auto;">
+      <div class="section-title" id="info-title"></div>
+      <div id="info-body"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px;"><button class="btn" onclick="closeInfo()">Close</button></div>
+    </div>
+  </div>
+
   <!-- pump-curve graph digitizer -->
   <div id="dig-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;align-items:center;justify-content:center;padding:1rem;overflow:auto;">
     <div class="card" style="max-width:780px;width:100%;margin:0;max-height:94vh;overflow:auto;">
@@ -351,6 +402,226 @@ svg{display:block;max-width:100%;height:auto;}
       <div class="section-title"><i class="ti ti-clipboard-list"></i>Assumptions &amp; structural context</div>
       <div id="grp-assume"></div>
       <div class="footnote" id="assume-notes"></div>
+      <details id="assume-dd" ontoggle="try{localStorage.setItem('uplift-assume-dd',this.open?'1':'0')}catch(e){}" style="margin-top:10px;border-top:.5px solid var(--color-border-secondary);padding-top:10px;">
+        <summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--color-text-primary);">
+          <i class="ti ti-flask"></i> Backend — hardcoded constants &amp; placeholders <b id="assume-flag-n" style="color:var(--color-text-warning);"></b>
+        </summary>
+        <p style="font-size:12px;color:var(--color-text-secondary);line-height:1.6;margin:8px 0;">Every hardcoded physics / reference / component constant behind the calculators — air films, insulation R-per-inch, sol-air uplifts, occupant heat, climate design temps, solar panel specs. <b>⚑ flagged</b> = an assumption that needs test data or source confirmation before anything gets certified.</p>
+        <div class="footnote" id="assume-flag-list" style="margin-bottom:8px;"></div>
+        <button class="btn" onclick="openAssumeModal()"><i class="ti ti-lock"></i> Open backend editor (password)</button>
+      </details>
+    </div>
+  </section>
+
+  <!-- ================= ENVELOPE ================= -->
+  <section class="tabpane" data-pane="env">
+    <div class="info-bar">
+      Building thermal envelope — folded from the wall stack-up and Charlie's thermal model. Per-surface
+      <b>effective R</b> accounts for <b>steel thermal bridging</b> (the 3″ steel studs short-circuit the
+      cavity insulation), then rolls up to the overall <b>Uo</b> and the HUD §3280.506 zone check.
+      The wall build-up also sets the interior footprint. <b>Continuous board (inboard) is the big lever</b> —
+      steel doesn't bridge it. Switch the calculation basis to compare the design estimate vs the HUD certificate method.
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-adjustments"></i>Basis &amp; target</div>
+      <div id="env-basis"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-layout-board-split"></i>Wall assembly presets</div>
+      <div id="env-presets" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <div class="footnote">Quick-set the cavity + continuous combination. Fine-tune every layer below.</div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-wall"></i>Wall build-up (exterior → interior)</div>
+      <div id="env-wall-mats"></div>
+      <div id="grp-env-wall"></div>
+      <div style="display:flex;height:54px;border-radius:8px;overflow:hidden;border:0.5px solid var(--color-border-secondary);margin-top:12px;" id="env-stack"></div>
+      <div class="footnote">Proportional cross-section (outside ← → inside). Cavity insulation lives inside the member depth; continuous board and finishes add to wall thickness.</div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-frame"></i>Steel framing (thermal bridging)</div>
+      <div id="env-framing-mode"></div>
+      <div id="env-framing-wrap">
+        <div class="tblwrap"><table class="tbl" id="env-framing-table"></table></div>
+        <div style="margin-top:8px;"><button class="btn" onclick="addFramingRow()">+ add member group</button></div>
+        <div class="footnote" id="env-framing-sum"></div>
+        <div id="grp-env-framing" style="margin-top:8px;"></div>
+        <div class="footnote"><b>Placeholder member schedule</b> — replace counts/lengths with the real steel schedule
+          from the structural drawings (one row per member group per wall; diagonals are just more linear feet).
+          Steel face area = count × length × face width. Future: import the takeoff from a DXF layer.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-box"></i>Roof &amp; floor</div>
+      <div id="env-roof-mats"></div>
+      <div id="grp-env-roof"></div>
+      <div id="env-floor-mats" style="margin-top:6px;"></div>
+      <div id="grp-env-floor"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-window"></i>Windows &amp; door</div>
+      <div id="grp-env-open"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-temperature"></i>Envelope results</div>
+      <div class="metric-grid" id="env-cards"></div>
+    </div>
+    <div class="notice" id="note-envelope"></div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-table"></i>Assembly comparison (current basis)</div>
+      <div class="tblwrap"><table class="tbl" id="env-compare"></table></div>
+      <div class="footnote">Wall R and overall Uo for each preset, holding roof/floor/windows/door fixed. Shows why continuous board moves Uo more than swapping cavity fill.</div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-book-2"></i>Method &amp; references — what the two bases mean</div>
+      <div class="reflist">
+        <div class="refblock">
+          <b>Uo and the zone check — HUD 24 CFR §3280.506.</b> Uo is the whole-home <i>overall coefficient of heat
+          transmission</i>: total envelope conductance UA (Btu/hr·°F) divided by total envelope area (walls + roof +
+          floor, windows &amp; door included), evaluated at a 70&nbsp;°F indoor design temperature, <i>excluding</i>
+          infiltration and ventilation. The rule caps it by climate zone — <b>Zone&nbsp;1 ≤ 0.116, Zone&nbsp;2 ≤ 0.096,
+          Zone&nbsp;3 ≤ 0.079</b> Btu/(hr·ft²·°F) — with the zone set by the map in Figure&nbsp;1 to §3280.506(a) (roughly:
+          Z1 = deep South, Z2 = mid-country, Z3 = northern tier). §3280.506(c) separately requires cavities to be insulated
+          so heat transmission is uniform — scattered bare spots don't average away.
+          <a href="https://www.law.cornell.edu/cfr/text/24/3280.506" target="_blank" rel="noopener">§3280.506 (Cornell)</a> ·
+          <a href="https://www.ecfr.gov/current/title-24/subtitle-B/chapter-XX/part-3280/subpart-F" target="_blank" rel="noopener">Subpart&nbsp;F (eCFR)</a>
+        </div>
+        <div class="refblock">
+          <b>“Design” basis — ASHRAE effective-R (our best physics estimate).</b> ASHRAE is the engineering society whose
+          <i>Handbook of Fundamentals</i> and <i>Standard 90.1</i> define how assemblies are actually rated. For steel
+          framing, simple parallel-path math fails badly — steel conducts ~400× better than wood, so each member drains
+          heat from a band wider than its own face (the Handbook's “zone method” models this). 90.1 Appendix&nbsp;A
+          therefore publishes <b>measured/modelled effective R-values</b>: e.g. R-13 batt between 3.5″ steel studs @16″ o.c.
+          is worth only <b>R-6.0</b> — ~46% of nominal. This tab uses that table directly in “studs o.c.” mode, and in
+          <b>member-takeoff mode</b> generalizes it: your schedule's steel face fraction (count × length × face width ÷ area,
+          × a small weld/plate allowance K) is looked up on the same table by steel fraction — its 16″/24″ o.c. columns
+          correspond to ≈10.2% / 6.8% steel — so diagonals and truss members are handled by their actual steel, and the
+          table's built-in lateral-spread (zone) physics is preserved. Continuous board inboard of the frame is unbridged
+          and counts at full R.
+          <a href="https://up.codes/s/metal-stud-wall-effective-r-values-for-metal-framing-and-cavity-only" target="_blank" rel="noopener">Effective-R table (UpCodes / IECC A103.3.6.2)</a> ·
+          <a href="https://www.cfsei.org/assets/docs/designguides/thermal_design_guide_2015_edition.pdf" target="_blank" rel="noopener">CFSEI cold-formed-steel thermal design guide (PDF)</a>
+        </div>
+        <div class="refblock">
+          <b>“HUD certificate” basis — §3280.508 + §3280.509 (the regulatory calculation).</b> The Uo that goes on the
+          heat-loss certificate must follow the <i>1997 ASHRAE Handbook of Fundamentals</i> procedures and HUD's reference
+          document PNL-8006. Where you don't have specific test data, §3280.509 prescribes defaults: <b>framing counts as
+          15% of wall area (10% of roof/floor)</b> in a parallel path — that is what this basis switches to — plus rules the
+          later tabs will pick up: infiltration = 0.7·T·perimeter (§3280.509(a)); compressed insulation derated by table
+          (§3280.509(c)); duct rules (d–f). §3280.508 additionally requires framing and any “thermal shorts” exceeding 1%
+          of surface area (in aggregate) to be explicitly counted — for a welded truss frame that is exactly what the member
+          takeoff documents — and window U-values from <b>NFRC&nbsp;100 / AAMA&nbsp;1503</b> testing (or the higher ASHRAE
+          default if unrated). Deliverables downstream: the §3280.510 heat-loss certificate (Uo zone + lowest outdoor temp
+          the heater holds 70&nbsp;°F) and the §3280.511 comfort-cooling certificate.
+          <a href="https://www.law.cornell.edu/cfr/text/24/3280.508" target="_blank" rel="noopener">§3280.508</a> ·
+          <a href="https://www.law.cornell.edu/cfr/text/24/3280.509" target="_blank" rel="noopener">§3280.509</a> ·
+          <a href="https://www.law.cornell.edu/cfr/text/24/3280.510" target="_blank" rel="noopener">§3280.510</a> ·
+          <a href="https://www.law.cornell.edu/cfr/text/24/3280.511" target="_blank" rel="noopener">§3280.511</a>
+        </div>
+        <div class="refblock" style="margin-bottom:0;">
+          <b>Which basis when?</b> Use <b>Design</b> to make engineering trade-offs (it's the closest to what the wall will
+          really do). Use <b>HUD certificate</b> to preview the number a DAPIA will check against the §3280.506 cap — with a
+          documented member takeoff you may argue actual framing data in place of the 15%/10% defaults; that's a DAPIA
+          conversation.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= THERMAL LOADS ================= -->
+  <section class="tabpane" data-pane="thermal">
+    <div class="info-bar">
+      Heating &amp; cooling design loads — Charlie's load structure running on the <b>real envelope</b> from the
+      Envelope tab (steel bridging included). Heating = conduction + infiltration with <b>no internal-gain
+      credit</b> on the certified number; cooling adds <b>sol-air</b> roof/wall gain, window <b>SHGC</b> solar,
+      internal gains and a latent adder. The Envelope tab's calculation basis carries through — the HUD basis
+      swaps in §3280.509(a) perimeter infiltration and pins indoor at 70&nbsp;°F (heat) / 75&nbsp;°F (cool).
+      HVAC electrical (COP → Energy tab) lands in the next phase.
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-map-pin"></i>Climate &amp; conditions</div>
+      <div id="th-climate"></div>
+      <div id="grp-th-cond"></div>
+      <div class="footnote" id="th-climate-note"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-sun"></i>Solar drivers (cooling)</div>
+      <div id="th-solar"></div>
+      <div id="grp-th-solar"></div>
+      <div class="footnote" id="th-solar-note"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-users"></i>Internal gains &amp; latent</div>
+      <div id="grp-th-gains"></div>
+      <div class="footnote" id="th-gains-note"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-flame"></i>Heating — results</div>
+      <div class="metric-grid" id="th-heat-cards"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-snowflake"></i>Cooling — results</div>
+      <div class="metric-grid" id="th-cool-cards"></div>
+    </div>
+    <div class="notice" id="note-thermal"></div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-table"></i>Load breakdown (at basis temperatures)</div>
+      <div class="tblwrap"><table class="tbl" id="th-breakdown"></table></div>
+      <div class="footnote">Heating column is the <b>certified</b> composition (no gain credit — gains shown as an
+        informational credit line). Cooling conduction rows include the sol-air uplift on roof and walls.</div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-book-2"></i>Method &amp; references</div>
+      <div class="reflist">
+        <div class="refblock">
+          <b>Load structure (from Charlie's model, corrected per the reconciliation memo).</b> Steady-state
+          conduction <i>Q&nbsp;=&nbsp;A·ΔT&nbsp;/&nbsp;R</i> summed over walls, roof, floor, windows <b>and the door</b>
+          (the memo's dropped-door-term bug is fixed here), on the <b>effective</b> per-surface R from the Envelope
+          tab — steel bridging included on both bases, so there is no fictional uniform R-19 anywhere in this chain.
+          Loads run 24&nbsp;h; the HVAC cycles but the load is continuous.
+        </div>
+        <div class="refblock">
+          <b>Infiltration — the biggest basis difference.</b> Design basis: sensible air-leakage
+          <i>1.08&nbsp;×&nbsp;CFM&nbsp;×&nbsp;ΔT</i> with CFM&nbsp;=&nbsp;ACH&nbsp;×&nbsp;interior&nbsp;volume&nbsp;÷&nbsp;60 —
+          defensible only with a blower-door target. HUD certificate basis: the §3280.509(a) absent-data formula
+          <i>0.7&nbsp;×&nbsp;T&nbsp;×&nbsp;perimeter</i> (T&nbsp;=&nbsp;70&nbsp;°F&nbsp;−&nbsp;heating-cert outdoor temp) —
+          for this unit ~5× the 0.5-ACH number, and it dominates the certified heating load. Cooling infiltration uses the
+          ACH method on both bases (the perimeter formula is a heating-certificate rule).
+          <a href="https://www.law.cornell.edu/cfr/text/24/3280.509" target="_blank" rel="noopener">§3280.509</a>
+        </div>
+        <div class="refblock">
+          <b>Sol-air &amp; window solar (cooling).</b> Sun makes the roof act hotter than air; the 24-h-average uplift by
+          roof colour (white +12&nbsp;°F … black +36&nbsp;°F, from Charlie's Ref table) is added to the outdoor temp for the
+          roof (full) and walls (half). Window solar gain = SHGC × average daytime flux on the glass × glazing area.
+          This is a steady-state approximation, not the ASHRAE Ch.&nbsp;22 CLTD procedure the §3280.511 comfort-cooling
+          certificate formally names — the certificate panel (P5) will carry that caveat.
+        </div>
+        <div class="refblock" style="margin-bottom:0;">
+          <b>Internal gains &amp; the two heating numbers.</b> People count 117&nbsp;W each total (cooling) /
+          70&nbsp;W sensible (heating credit, ASHRAE seated); plug gains come live from the Energy tab's loads table
+          (HVAC row excluded — that's the machine, not a gain). The <b>certified design load</b> takes <i>no</i> gain
+          credit — you can't certify furnace capacity assuming occupants are home (§3280.510). The <b>expected operating
+          load</b> (gains credited) is the number for energy/runtime estimates. Latent adder ≈ 30% of sensible in humid
+          climates. Steady-state throughout — no thermal mass; a design-trade tool, not Manual&nbsp;J.
+          <a href="https://www.law.cornell.edu/cfr/text/24/3280.510" target="_blank" rel="noopener">§3280.510</a> ·
+          <a href="https://www.law.cornell.edu/cfr/text/24/3280.511" target="_blank" rel="noopener">§3280.511</a>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -714,11 +985,37 @@ const S = {
   budgetWh:4500,
   batteryDoDPct:90, systemEffPct:95, battModKwh:5.12, battModAh:100, battNomV:51.2, battModules:2,
   // solar — scenario sets peak-sun-hours; Alaska winter & Texas summer bracket the range
-  solarW:1800, solarScenario:'tx-summer', solarPSH:6.0, solarDerate:75,   // 3 × 600 W panels
+  solarW:1800, solarPSH:2.5, solarDerate:75,   // 3 × 600 W panels; PSH auto-set from climate+season (msp winter default)
   // hot-water control logic — floor = setpointF (Legionella-safe); boost banks solar surplus as heat
   controlMode:'thermal-battery', boostSetpointF:160,
   // composting toilet — urine separation to a tank is the default
   toiletMode:'urine-sep', urineLppd:1.4, toiletEmptyDays:7, leachateFrac:35,
+  // ---- ENVELOPE (folded from wall-stack-up.html + Charlie's thermal model) ----
+  // Fixed exterior box 144×90×99 in (ENV constant). CURRENT DESIGN default: polyiso in the
+  // 3" steel-stud cavity, NO continuous board. Steel thermal bridging is modeled (ENV engine).
+  envBasis:'design',                 // 'design' = best engineering estimate | 'hud' = §3280.509(b) certificate defaults
+  uoZone:2,                          // HUD §3280.506 target zone for first markets (1/2/3)
+  framingMode:'takeoff',             // 'takeoff' = member schedule (truss/diagonal frame) | 'spacing' = simple studs o.c.
+  framingK:1.15,                     // weld/plate allowance on the takeoff steel fraction (1.0 = bare members; table carries the zone effect)
+  studDepthIn:3, studSpacingIn:16,   // member/cavity depth 3"; spacing only used in 'spacing' mode
+  wallCavMat:'polyiso', wallContMat:'polyiso', wallContIn:0,   // cavity polyiso, no continuous (real current design)
+  bumperIn:1, sheathIn:0.5, rainGapIn:0.75, panelIn:0.5,       // other wall layers (drive geometry + minor R)
+  roofCavMat:'polyiso', roofDepthIn:3, roofContIn:0,           // roof assembly
+  floorCavMat:'polyiso', floorDepthIn:3, floorContIn:0,        // floor assembly (chassis steel is its own bridge)
+  windowAreaFt2:16, windowU:0.30, windowSHGC:0.40,             // glazing — U per NFRC 100 (§3280.508(e))
+  doorWin:32, doorHin:80, doorR:6,                             // door (insulated fiberglass ~R6)
+  roofColor:'white',                 // exposed roof membrane colour (sol-air driver)
+  wallColor:'light',                 // wall/cladding colour — own sol-air driver (was slaved to roof colour in Charlie's model)
+  // ---- THERMAL LOADS (P2 — Charlie's load structure on the real envelope) ----
+  climate:'msp',                     // location — ONE shared climate (solar PSH/daylight + thermal design temps)
+  season:'winter',                   // season for the solar/energy snapshot (thermal computes both design cases regardless)
+  pvRoofCoverPct:90,                 // % of roof shaded by standoff PV — that share gets +3°F residual, not the colour uplift
+  tempBasis:'design99',              // 'design99' = 99% design extreme (sizing) | 'mean' = seasonal mean (typical energy)
+  indoorSetF:72,                     // design-basis indoor setpoint (HUD basis pins 70°F heating / 75°F cooling)
+  outdoorOvrF:0,                     // manual outdoor override °F for both cases (0 = auto from climate+basis)
+  ach:0.5,                           // design-basis infiltration, air changes/hour (blower-door target)
+  latentPct:30,                      // cooling latent adder, % of sensible (~30% humid, ~15–20% dry)
+  solarGlassBtu:30,                  // avg daytime solar flux on glazing, Btu/hr·ft² (orientation-averaged)
 };
 
 // fixtures: gpm=flowrate, min=effective water-on min/day, pctHot=% from hot tank,
@@ -756,6 +1053,21 @@ let loads = [
   {name:'Toilet vent fan',    w:3,    hrs:24,   cat:'fan'},
 ];
 
+// steel framing takeoff — PLACEHOLDER member schedule; replace with counts lifted from the
+// structural dwgs (future: DXF import). Truss/diagonal frame: no "spacing" — bridging scales
+// with total steel face area seen by each surface: steel ft² = n × length × (face width ÷ 12).
+let framingRows = [
+  {name:'Long wall A — verticals',   surf:'wall',  n:5, lenFt:8.25, faceIn:1.5},
+  {name:'Long wall A — diagonals',   surf:'wall',  n:2, lenFt:5.0,  faceIn:1.5},
+  {name:'Long wall B — verticals',   surf:'wall',  n:5, lenFt:8.25, faceIn:1.5},
+  {name:'Long wall B — diagonals',   surf:'wall',  n:2, lenFt:5.0,  faceIn:1.5},
+  {name:'Short wall A — members',    surf:'wall',  n:4, lenFt:8.25, faceIn:1.5},
+  {name:'Short wall B — members',    surf:'wall',  n:4, lenFt:8.25, faceIn:1.5},
+  {name:'Top + bottom chords (all)', surf:'wall',  n:8, lenFt:9.75, faceIn:1.5},
+  {name:'Roof members',              surf:'roof',  n:6, lenFt:7.5,  faceIn:1.5},
+  {name:'Floor members / outriggers',surf:'floor', n:6, lenFt:7.5,  faceIn:1.5},
+];
+
 let activeTab = 'summary';
 let hwTab = 0;   // hot-water sub-tab index
 let energyZoom = 1;   // horizontal zoom for the daily energy chart
@@ -770,6 +1082,8 @@ const R = {};
 const TABS = [
   {id:'summary', label:'Summary', icon:'gauge'},
   {id:'vars',    label:'Variables',icon:'adjustments'},
+  {id:'env',     label:'Envelope',icon:'wall'},
+  {id:'thermal', label:'Thermal', icon:'temperature'},
   {id:'water',   label:'Water',   icon:'droplet'},
   {id:'hot',     label:'Hot Water',icon:'flame'},
   {id:'toilet',  label:'Toilet',  icon:'recycle'},
@@ -778,9 +1092,24 @@ const TABS = [
   {id:'diagram', label:'Diagram', icon:'sitemap'},
 ];
 
-const SOLAR_SCEN = { 'ak-winter':0.7, 'temperate':3.5, 'tx-summer':6.0 };   // peak sun hours by scenario
-const SOLAR_DAYLIGHT = { 'ak-winter':5, 'temperate':11, 'tx-summer':14, 'custom':10 };  // daylight hours (for the daily curve)
-function scenLabel(k){return {'ak-winter':'Alaska midwinter','temperate':'Temperate spring/fall','tx-summer':'Texas summer','custom':'Custom'}[k]||k;}
+// ============================================================================
+// CLIMATE — single source of truth for location + season, shared by the solar
+// model (PSH, daylight window) and the thermal-loads engine (design temps).
+// Austin/Minneapolis rows are Charlie's Ref table (NWS/ASHRAE 99% design temps,
+// seasonal means, peak sun hours). Fairbanks/Temperate carry the legacy solar
+// bracket PSH values; their design temps are PLACEHOLDER estimates — confirm
+// against ASHRAE design-condition tables before certifying anything with them.
+// ============================================================================
+const CLIMATES = {
+  austin:   {lbl:'Sun Belt — Austin TX',                 short:'Austin TX',      heatF:28,  coolF:100, winMeanF:52, sumMeanF:84, winPSH:3.5, sumPSH:6.8, winDayH:10,  sumDayH:14},
+  msp:      {lbl:'Midwest — Minneapolis MN',             short:'Minneapolis MN', heatF:-16, coolF:91,  winMeanF:17, sumMeanF:74, winPSH:2.5, sumPSH:5.5, winDayH:9,   sumDayH:15.5},
+  temperate:{lbl:'Temperate — PNW (placeholder temps)',  short:'Temperate PNW',  heatF:26,  coolF:85,  winMeanF:41, sumMeanF:66, winPSH:1.5, sumPSH:5.5, winDayH:8.5, sumDayH:16},
+  ak:       {lbl:'Alaska — Fairbanks (placeholder temps)',short:'Fairbanks AK',  heatF:-41, coolF:78,  winMeanF:-8, sumMeanF:62, winPSH:0.7, sumPSH:5.0, winDayH:5,   sumDayH:19},
+};
+const SEASONS = {winter:'winter', shoulder:'spring/fall', summer:'summer'};
+function climPSH(c,s){const k=CLIMATES[c]; if(!k) return null; return s==='summer'?k.sumPSH : s==='winter'?k.winPSH : Math.round((k.winPSH+k.sumPSH)/2*10)/10;}
+function climDayH(c,s){const k=CLIMATES[c]; if(!k) return 10; return s==='summer'?k.sumDayH : s==='winter'?k.winDayH : Math.round((k.winDayH+k.sumDayH)/2);}
+function climLabel(){const k=CLIMATES[S.climate]; return (k?k.short:'Custom')+' — '+(SEASONS[S.season]||S.season);}
 
 // electrical-load categories: label, colour, and a 24h shape (name resolved by loadProfile)
 const LOAD_CATS = {
@@ -806,7 +1135,7 @@ function loadProfile(name){
 }
 // solar generation shape: raised half-cosine over the daylight window, area = 1
 function solarProfile(){
-  const dl=SOLAR_DAYLIGHT[S.solarScenario]||10, start=12-dl/2, end=12+dl/2;
+  const dl=climDayH(S.climate,S.season), start=12-dl/2, end=12+dl/2;
   let a=new Array(24).fill(0);
   for(let h=0;h<24;h++){ const c=h+0.5; if(c>=start&&c<=end){ a[h]=Math.sin(Math.PI*(c-start)/dl); } }
   const s=a.reduce((x,y)=>x+y,0)||1; return a.map(x=>x/s);
@@ -870,12 +1199,12 @@ const FIELDS = {
     ['systemEffPct','Round-trip efficiency','%',1,'Delivery + round-trip efficiency. V5° ~95%; DC-direct loads add little conversion loss.'],
   ],
   'grp-solar':[
-    ['solarW','Panel array total','W',50,'Total nameplate wattage of the PV array on the roof (e.g. 3 × 600 W = 1800 W).'],
+    // solarW is now computed: panel STC W × qty — component data lives in the Assumptions backend (Variables tab)
     ['solarDerate','System derate','%',5,'Real-world losses: panel temperature, soiling, wiring, MPPT/charge efficiency. ~75% is typical.'],
   ],
   'grp-env':[
     ['ambientF','Cabin ambient temp','°F',1,'Air temperature inside the cabin. The hot tank bleeds heat to this (standby loss), and the cold inlet sits near it. Drops in a heat-out outage.','temp'],
-    ['solarPSH','Peak sun hours','h/day',0.1,'Equivalent full-sun hours/day for the location/season — set by the scenario above, or override. Alaska midwinter ~0.5–1; temperate ~3.5; Texas summer ~6.'],
+    ['solarPSH','Peak sun hours (PSH)','h/day',0.1,'PSH = the day\'s total solar energy compressed into equivalent hours of FULL-BLAST sun (1,000 W/m²) — sunlight ramps, peaks and fades, so a 9-hour winter day may only be “worth” 2.5 full-sun hours. Multiplies straight into harvest: array W × PSH × derate = Wh/day. Auto-set from Location + Season above (pick Custom location to type your own). Fairbanks midwinter 0.7; Minneapolis winter 2.5; Austin summer 6.8.'],
   ],
   'grp-assume':[
     ['forkliftCapacityLb','Forklift capacity','lb',50,'The forklift / telehandler lift capacity — the governing cap on the unit dry weight (there is NO regulatory max weight). The home is transported with tanks empty, so water mass does not load the lift.'],
@@ -886,6 +1215,45 @@ const FIELDS = {
     ['urineLppd','Urine per person','L/day',0.1,'Urine produced per person per day (roughly 1–1.5 L is typical). Drives container / leachate tank sizing.','volL'],
     ['toiletEmptyDays','Days between empties','days',1,'How often you empty the urine container or leachate tank. Longer intervals need a larger container.'],
     ['leachateFrac','Leachate fraction','%',5,'Leachate mode only: the share of urine that drains off as liquid; the rest is absorbed or evaporated in the compost.'],
+  ],
+  'grp-env-wall':[
+    ['studDepthIn','Steel stud depth','in',0.5,'Depth of the steel stud cavity. SN002 uses 3" studs. Sets the cavity insulation thickness and how far the steel bridges across the wall.','len'],
+    ['wallContIn','Continuous board','in',0.25,'Thickness of continuous insulation board on the interior face, INBOARD of the studs. Steel does NOT bridge this, so it adds its full R — the dominant lever for a steel-framed wall.','len'],
+    ['sheathIn','Exterior sheathing','in',0.0625,'Exterior sheathing thickness (plywood/OSB). Minor R; counts toward wall thickness.','len'],
+    ['rainGapIn','Rain gap','in',0.0625,'Ventilated air space behind the cladding (0 = none). Vented, so ~no thermal benefit; counts toward wall thickness.','len'],
+    ['bumperIn','Steel bumper','in',0.0625,'Outermost shipping-protection layer. Steel, ~no R; counts toward wall thickness.','len'],
+    ['panelIn','Interior panel','in',0.0625,'Interior finish panel (Trusscore/PVC). Minor R; counts toward wall thickness.','len'],
+  ],
+  'grp-env-framing':[
+    ['framingK','Weld/plate allowance K','×',0.05,'Multiplier on the takeoff steel fraction before it enters the ASHRAE effective-R table, covering steel the member schedule misses: gusset plates, welded joints, clips, fastener rows. 1.0 = bare members only; ~1.15 typical; push toward 1.5 for heavily plated frames. (The zone-spreading physics itself is already in the table.)'],
+  ],
+  'grp-env-roof':[
+    ['roofDepthIn','Roof cavity depth','in',0.5,'Depth of the roof framing cavity / insulation.','len'],
+    ['roofContIn','Roof continuous board','in',0.25,'Continuous insulation over the roof framing (unbridged).','len'],
+  ],
+  'grp-env-floor':[
+    ['floorDepthIn','Floor cavity depth','in',0.5,'Depth of the floor framing cavity / insulation. The steel chassis/outriggers under the floor are a major thermal bridge.','len'],
+    ['floorContIn','Floor continuous board','in',0.25,'Continuous insulation across the floor framing (unbridged).','len'],
+  ],
+  'grp-env-open':[
+    ['windowAreaFt2','Window area (total glazing)','ft²',1,'Total glazing area across all windows.','area'],
+    ['windowU','Window U-factor','U',0.01,'Whole-window U-factor. HUD §3280.508(e) requires an NFRC 100 / AAMA 1503.1 tested value (or the higher ASHRAE Ch.29 default when the type is indeterminate). R = 1/U. Imperial units (Btu/hr·ft²·°F).'],
+    ['windowSHGC','Window SHGC','',0.05,'Solar Heat Gain Coefficient — fraction of incident solar transmitted. Drives cooling solar gain (thermal-loads tab).'],
+    ['doorWin','Door width','in',1,'Door leaf width — sets door area.','len'],
+    ['doorHin','Door height','in',1,'Door leaf height — sets door area.','len'],
+    ['doorR','Door R-value','R',0.5,'Whole-door R-value (insulated fiberglass ≈ R-6; insulated steel ≈ R-5).'],
+  ],
+  'grp-th-cond':[
+    ['indoorSetF','Indoor set temp','°F',1,'Design-basis indoor setpoint. The HUD certificate basis ignores this and pins 70°F for heating (§3280.510) and 75°F for cooling.','temp'],
+    ['outdoorOvrF','Outdoor override (0 = auto)','°F',1,'Force a specific outdoor temperature for both cases — 0 uses the climate preset at the selected basis. Handy for “what if it hits −30°F” stress tests.'],
+    ['ach','Air changes per hour','ACH',0.05,'Design-basis infiltration. 0.5 is a conservative default; only a blower-door test justifies lower. The HUD basis replaces this with 0.7·T·perimeter (§3280.509(a)) for heating.'],
+  ],
+  'grp-th-solar':[
+    ['pvRoofCoverPct','PV roof coverage','%',5,'Share of the roof shaded by standoff-mounted solar panels. Panels intercept the sun (some becomes electricity, the rest re-radiates above the roof), so the covered area gets only a small residual sol-air uplift (~+3°F) instead of the colour uplift. SN002 plan: ~90% covered, white membrane underneath.'],
+    ['solarGlassBtu','Avg daytime sun on glass','Btu/hr·ft²',5,'Average solar flux reaching the glazing during daylight, orientation-averaged. Multiplied by SHGC and glazing area for the cooling solar gain.'],
+  ],
+  'grp-th-gains':[
+    ['latentPct','Latent fraction (cooling)','%',5,'Humidity load as a share of sensible cooling — ~30% humid (Austin), ~15–20% dry climates.'],
   ],
 };
 
@@ -918,7 +1286,7 @@ function uFl(g){return isM()?g*3.78541:g;}               function uFli(d){return
 function uH(ft){return isM()?ft*0.3048:ft;}              function uHi(d){return isM()?d/0.3048:d;}       // head / large length (ft)
 function uL(inch){return isM()?inch*2.54:inch;}          function uLi(d){return isM()?d/2.54:d;}          // small length (in)
 function uRpl(rpi){return isM()?rpi/2.54:rpi;}           function uRpli(d){return isM()?d*2.54:d;}        // R per unit length
-function uA(ft2){return isM()?ft2*0.092903:ft2;}                                                          // area (ft²)
+function uA(ft2){return isM()?ft2*0.092903:ft2;}          function uAi(d){return isM()?d/0.092903:d;}     // area (ft²)
 // unit labels
 function uTu(){return isM()?'°C':'°F';}
 function uVu(){return isM()?'L':'gal';}
@@ -942,7 +1310,7 @@ function MASS(gal,dec=0){return isM()?`${f(gal*3.78541,dec)} kg`:`${f(gal*8.34,d
 const DIM = {
   temp:{d:uT,i:uTi,u:uTu}, vol:{d:uV,i:uVi,u:uVu}, volL:{d:uVL,i:uVLi,u:uVu},
   flow:{d:uFl,i:uFli,u:uFlu}, head:{d:uH,i:uHi,u:uHu}, len:{d:uL,i:uLi,u:uLu},
-  rpl:{d:uRpl,i:uRpli,u:uRplu},
+  rpl:{d:uRpl,i:uRpli,u:uRplu}, area:{d:uA,i:uAi,u:uAu},
 };
 function toggleUnits(){unitSys=isM()?'imperial':'metric';renderInputs();recalc();updUnitBtn();save();}
 function updUnitBtn(){const b=el('unit-toggle');if(b)b.innerHTML=`<i class="ti ti-arrows-exchange"></i> ${isM()?'Metric (SI)':'Imperial (US)'}`;}
@@ -985,16 +1353,23 @@ function renderInputs(){
       </select></div></div>`;
     tg.innerHTML = sel + tg.innerHTML;
   }
-  // solar scenario (location/season) select prepended into the Environment group on Variables
+  // shared climate (location + season) selects prepended into the Environment group on Variables —
+  // the SAME S.climate drives the Thermal tab's design temps; season sets the solar PSH/daylight snapshot
   const sg=el('grp-env');
   if(sg){
-    const opt=(v,l)=>`<option value="${v}"${S.solarScenario===v?' selected':''}>${l}</option>`;
-    const sel=`<div class="field"><div class="field-lbl">Location / season <i class="ti ti-help-circle help" title="Sets peak sun hours (and the daylight window for the energy profile). Alaska midwinter and Texas summer bracket the range; temperate is a mid case; custom lets you type your own peak-sun-hours."></i></div>
-      <div class="field-input"><select onchange="updSolarScenario(this.value)">
-        ${opt('ak-winter','Alaska — midwinter')}${opt('temperate','Temperate — spring/fall')}${opt('tx-summer','Texas — summer')}${opt('custom','Custom')}
+    const opt=(v,l,cur)=>`<option value="${v}"${String(cur)===String(v)?' selected':''}>${l}</option>`;
+    const locSel=`<div class="field"><div class="field-lbl">Location (shared with Thermal) <i class="ti ti-help-circle help" title="One climate for the whole planner: sets solar peak-sun-hours + daylight here, and the heating/cooling design temperatures on the Thermal tab. Austin/Minneapolis carry Charlie's NWS/ASHRAE data; Fairbanks/Temperate have placeholder design temps. Custom = type your own PSH (and use the Thermal outdoor override for temps)."></i></div>
+      <div class="field-input"><select onchange="updClimate(this.value)">
+        ${Object.keys(CLIMATES).map(k=>opt(k,CLIMATES[k].lbl,S.climate)).join('')}${opt('custom','Custom (manual PSH / temps)',S.climate)}
       </select></div></div>`;
-    sg.innerHTML = sel + sg.innerHTML;
+    const seaSel=`<div class="field"><div class="field-lbl">Season (solar snapshot) <i class="ti ti-help-circle help" title="Which season the solar/energy picture shows — sets peak sun hours and the daylight window. The Thermal tab always computes BOTH the winter heating and summer cooling design cases; this only affects PV harvest."></i></div>
+      <div class="field-input"><select onchange="updSeason(this.value)">
+        ${opt('winter','Winter',S.season)}${opt('shoulder','Spring / Fall',S.season)}${opt('summer','Summer',S.season)}
+      </select></div></div>`;
+    sg.innerHTML = locSel + seaSel + sg.innerHTML;
   }
+  injectEnv();
+  injectThermal();
   renderFixtureTable();
   renderShowerHeadTable();
   renderPumpLib();
@@ -1004,7 +1379,15 @@ function renderInputs(){
 function upd(key,val){S[key]=parseFloat(val);recalc();}
 function updDim(key,dim,val){S[key]=DIM[dim].i(parseFloat(val));recalc();}   // convert display -> stored
 function updStr(key,val){S[key]=val;renderInputs();recalc();}
-function updSolarScenario(v){S.solarScenario=v; if(SOLAR_SCEN[v]!=null) S.solarPSH=SOLAR_SCEN[v]; renderInputs(); recalc();}
+function syncClimatePSH(){const p=climPSH(S.climate,S.season); if(p!=null) S.solarPSH=p;}   // custom climate → PSH stays manual
+function updClimate(v){S.climate=v; syncClimatePSH(); renderInputs(); recalc();}
+function updSeason(v){S.season=v; syncClimatePSH(); renderInputs(); recalc();}
+function migrateClimate(oldScen){   // v6 saves: solarScenario → shared climate+season (tx-summer PSH 6.0 becomes Austin 6.8)
+  const m={'ak-winter':['ak','winter'],'temperate':['temperate','shoulder'],'tx-summer':['austin','summer'],'custom':['custom','summer']}[oldScen];
+  if(!m) return;
+  S.climate=m[0]; S.season=m[1];
+  if(m[0]!=='custom') syncClimatePSH();
+}
 
 // ---- fixture table ----
 function renderFixtureTable(){
@@ -1324,6 +1707,533 @@ function operatingPoint(){
 }
 
 // ---- main recalc ----
+// ============================================================================
+// ENVELOPE ENGINE — building thermal envelope with steel thermal bridging.
+// Folded from wall-stack-up.html (geometry + layer stack) + Charlie's thermal
+// model (Uo). Per-surface effective R → UA → Uo → HUD §3280.506 zone check.
+// R in hr·ft²·°F/Btu, areas ft², U in Btu/hr·ft²·°F. See SN002_thermal_reconciliation.md.
+// ============================================================================
+const ENV = { EX_L:144, EX_W:90, EX_H:99 };          // exterior box (in) — matches stack calc + Charlie
+const UO_ZONE = { 1:0.116, 2:0.096, 3:0.079 };        // HUD §3280.506 max Uo by zone
+const INS_RPI = { none:0.0, batt:3.5, mineral:4.2, eps:4.0, xps:5.0, polyiso:6.0, ccspf:6.5 };  // R per inch
+const INS_LBL = { none:'None / empty cavity', batt:'Fiberglass batt', mineral:'Mineral wool', eps:'EPS board', xps:'XPS board', polyiso:'Polyiso (PIR)', ccspf:'Closed-cell spray foam' };
+const FILM = { wall:0.85, roof:0.78, floor:1.00 };    // ASHRAE interior+exterior air films by surface
+const MISC_RPI = { wood:1.25, pvc:0.90 };             // sheathing/panel R per inch
+let STEEL_RPI = 0.0032;                               // steel R per inch (≈0 — it's the bridge); editable via Assumptions backend
+const ENV_PRESETS = [
+  {cav:'polyiso', cont:0,    lbl:'Polyiso cavity · no continuous'},
+  {cav:'polyiso', cont:0.5,  lbl:'Polyiso + ½″ continuous'},
+  {cav:'polyiso', cont:0.75, lbl:'Polyiso + ¾″ continuous'},
+  {cav:'ccspf',   cont:0,    lbl:'Spray foam cavity · no continuous'},
+  {cav:'ccspf',   cont:0.75, lbl:'Spray foam + ¾″ continuous'},
+];
+// piecewise-linear interp with end-slope extrapolation
+function interpPts(pts,x){
+  if(x<=pts[0][0]){const a=pts[0],b=pts[1];return a[1]+(b[1]-a[1])*(x-a[0])/(b[0]-a[0]);}
+  for(let i=0;i<pts.length-1;i++){if(x<=pts[i+1][0]){const a=pts[i],b=pts[i+1];return a[1]+(b[1]-a[1])*(x-a[0])/(b[0]-a[0]);}}
+  const n=pts.length,a=pts[n-2],b=pts[n-1];return a[1]+(b[1]-a[1])*(x-a[0])/(b[0]-a[0]);
+}
+// Steel-framed CAVITY-LAYER effective R — ASHRAE 90.1 App A / IECC Table A103.3.6.2
+// (cavity insulation in steel studs is only ~45–50% effective). Continuous ci added separately (series).
+const A103_16=[[0,0],[11,5.5],[13,6.0],[15,6.4],[19,7.1],[21,7.4],[25,7.8]];   // eff R @ 16" o.c.
+const A103_24=[[0,0],[11,6.6],[13,7.2],[15,7.8],[19,8.6],[21,9.0],[25,9.6]];   // eff R @ 24" o.c.
+const A103_F16=1.625/16, A103_F24=1.625/24;   // steel face fraction the table columns correspond to (1.625" flange)
+function framedEffR_table(nomCavR, spacingIn){
+  const e16=interpPts(A103_16,nomCavR), e24=interpPts(A103_24,nomCavR);
+  const s=Math.min(24,Math.max(16,+spacingIn||16));
+  const eff=e16+(e24-e16)*((s-16)/8);
+  return Math.max(0, Math.min(eff, nomCavR||0.9));    // never beat nominal; empty cavity ≈ bridged air
+}
+// takeoff mode: same table, entered by STEEL FRACTION instead of spacing — the member schedule's
+// raw face fraction (×K weld/plate allowance) is interpolated between the table's 24"oc (6.8%)
+// and 16"oc (10.2%) columns and extrapolated beyond. The table carries the zone-spreading physics.
+function framedEffR_frac(nomCavR, rawFrac, K){
+  const cav=Math.max(nomCavR,0.91);
+  const e16=interpPts(A103_16,cav), e24=interpPts(A103_24,cav);
+  const fr=Math.max(0.02, rawFrac*(K||1));
+  const eff=e24+(e16-e24)*((fr-A103_F24)/(A103_F16-A103_F24));
+  return Math.max(0.5, Math.min(eff, cav));
+}
+// shared envelope areas (ft²) — one source for the engine, takeoff fractions, and compare table
+function envAreas(){
+  const L=ENV.EX_L/12, W=ENV.EX_W/12, H=ENV.EX_H/12;      // ft
+  const wallGross=2*(L+W)*H, roofA=L*W, floorA=L*W;
+  const winA=Math.max(0,S.windowAreaFt2), doorA=(S.doorWin*S.doorHin)/144;
+  return {L,W,H,wallGross,roofA,floorA,winA,doorA,opaqueWall:Math.max(1,wallGross-winA-doorA),Aenv:wallGross+roofA+floorA};
+}
+// steel face area (ft²) a surface group "sees", from the member takeoff (n × length × face width)
+function steelFaceFt2(surf){return framingRows.filter(r=>r.surf===surf).reduce((s,r)=>s+(+r.n||0)*(+r.lenFt||0)*((+r.faceIn||0)/12),0);}
+// Assembly R for one framed surface. Series layers (films/sheathing/continuous/panel) wrap both paths.
+//  design + takeoff: series + A103 effective cavity layer entered by steel fraction from the
+//    member schedule (framedEffR_frac) — table-anchored, so ci and bridging interact correctly.
+//  design + spacing: series + Table A103.3.6.2 effective cavity layer (quick studs-o.c. mode).
+//  hud: §3280.509(b) "in absence of specific data" framing areas — 15% wall / 10% roof & floor,
+//    parallel path with the series layers wrapped around both paths.
+function surfaceR(basis, surf, nomCavR, seriesR, steelR, area){
+  const cav=Math.max(nomCavR,0.91);                       // empty cavity ≈ still-air space
+  if(basis==='hud'){
+    const ff=surf==='wall'?0.15:0.10;
+    return 1/( ff/Math.max(seriesR+steelR,0.1) + (1-ff)/(seriesR+cav) );
+  }
+  if(S.framingMode==='spacing') return seriesR + framedEffR_table(cav, S.studSpacingIn);
+  const raw = area>0 ? steelFaceFt2(surf)/area : 0;
+  return seriesR + framedEffR_frac(cav, raw, S.framingK);
+}
+// wall assembly R for a given cavity material + continuous thickness (used live + in the compare table)
+function wallRFor(cav, cont, basis){
+  const a=envAreas();
+  const series = FILM.wall + S.sheathIn*MISC_RPI.wood + cont*(INS_RPI[S.wallContMat]||0) + S.panelIn*MISC_RPI.pvc;  // gap+bumper ≈ R0
+  const nom = (INS_RPI[cav]||0)*S.studDepthIn;
+  return surfaceR(basis, 'wall', nom, series, S.studDepthIn*STEEL_RPI, a.opaqueWall);
+}
+function computeEnv(){
+  const b=S.envBasis, a=envAreas();
+  // per-surface effective R
+  const Rwall=wallRFor(S.wallCavMat,S.wallContIn,b);
+  const roofSeries=FILM.roof + 0.75*MISC_RPI.wood + S.roofContIn*INS_RPI.polyiso + 0.5*MISC_RPI.pvc;
+  const Rroof=surfaceR(b,'roof',(INS_RPI[S.roofCavMat]||0)*S.roofDepthIn,roofSeries,S.roofDepthIn*STEEL_RPI,a.roofA);
+  const floorSeries=FILM.floor + 0.75*MISC_RPI.wood + S.floorContIn*INS_RPI.polyiso + 0.5*MISC_RPI.wood;
+  const Rfloor=surfaceR(b,'floor',(INS_RPI[S.floorCavMat]||0)*S.floorDepthIn,floorSeries,S.floorDepthIn*STEEL_RPI,a.floorA);
+  const Rwin=1/Math.max(S.windowU,0.05), Rdoor=Math.max(S.doorR,0.5);
+  // UA / Uo
+  const UA=a.opaqueWall/Rwall + a.roofA/Rroof + a.floorA/Rfloor + a.winA/Rwin + a.doorA/Rdoor;
+  const Uo=UA/a.Aenv;
+  // steel takeoff fractions (raw and effective ×K) for display
+  const ffWraw=steelFaceFt2('wall')/a.opaqueWall, ffRraw=steelFaceFt2('roof')/a.roofA, ffFraw=steelFaceFt2('floor')/a.floorA;
+  // interior geometry from the wall/roof/floor build-up
+  const wallThk=S.bumperIn+S.sheathIn+S.rainGapIn+S.studDepthIn+S.wallContIn+S.panelIn;
+  const intL=ENV.EX_L-2*wallThk, intW=ENV.EX_W-2*wallThk, intFloorFt2=(intL*intW)/144;
+  const roofThk=0.75+S.roofDepthIn+S.roofContIn+0.5, floorThk=0.75+S.floorDepthIn+S.floorContIn+0.5;
+  const intH=ENV.EX_H-roofThk-floorThk;
+  const zonePass={1:Uo<=UO_ZONE[1],2:Uo<=UO_ZONE[2],3:Uo<=UO_ZONE[3]};
+  const targetOK=Uo<=UO_ZONE[Number(S.uoZone)];
+  return {b,...a,Rwall,Rroof,Rfloor,Rwin,Rdoor,UA,Uo,ffWraw,ffRraw,ffFraw,wallThk,intL,intW,intFloorFt2,intH,zonePass,targetOK};
+}
+function envUoWith(Rwall,e){
+  const UA=e.opaqueWall/Rwall + e.roofA/e.Rroof + e.floorA/e.Rfloor + e.winA/e.Rwin + e.doorA/e.Rdoor;
+  return UA/e.Aenv;
+}
+function zoneTag(Uo){return Uo<=UO_ZONE[3]?'Zone 1–3':Uo<=UO_ZONE[2]?'Zone 1–2':Uo<=UO_ZONE[1]?'Zone 1':'fails all';}
+
+// inject envelope selects/presets into the Envelope pane (called from renderInputs, like toilet/solar)
+function injectEnv(){
+  const opt=(v,l,cur)=>`<option value="${v}"${String(cur)===String(v)?' selected':''}>${l}</option>`;
+  const matSel=(key)=>`<select onchange="updStr('${key}',this.value)">`+Object.keys(INS_RPI).map(k=>opt(k,INS_LBL[k],S[key])).join('')+`</select>`;
+  const field=(lbl,inner,help)=>`<div class="field"><div class="field-lbl">${lbl}${help?` <i class="ti ti-help-circle help" title="${help}"></i>`:''}</div><div class="field-input">${inner}</div></div>`;
+  setHTML('env-basis',
+    field('Calculation basis',`<select onchange="updStr('envBasis',this.value)">`+opt('design','Design — ASHRAE eff-R (steel bridging)',S.envBasis)+opt('hud','HUD certificate — §3280.509(b)',S.envBasis)+`</select>`,
+      'Design = realistic effective R via ASHRAE 90.1 App A / IECC Table A103.3.6.2 (steel bridging). HUD = §3280.509(b) framing-fraction parallel path (15% wall, 10% roof/floor) for the certificate.')+
+    field('Target Uo zone (§3280.506)',`<select onchange="updStr('uoZone',this.value)">`+opt('1','Zone 1 — Uo ≤ 0.116',S.uoZone)+opt('2','Zone 2 — Uo ≤ 0.096',S.uoZone)+opt('3','Zone 3 — Uo ≤ 0.079',S.uoZone)+`</select>`,'The HUD Uo zone your first markets fall in (Figure 1 to §3280.506). Sets the pass/fail target.')
+  );
+  setHTML('env-presets', ENV_PRESETS.map(p=>{
+    const on=S.wallCavMat===p.cav && Math.abs(S.wallContIn-p.cont)<0.01;
+    const onStyle=on?'background:var(--color-background-info);border-color:var(--color-text-info);color:var(--color-text-info);font-weight:600;':'';
+    return `<button class="btn" style="${onStyle}" onclick="setEnvPreset('${p.cav}',${p.cont})">${p.lbl}</button>`;
+  }).join(' '));
+  setHTML('env-wall-mats',
+    field('Cavity insulation (between members)',matSel('wallCavMat'),'Insulation filling the steel-frame cavity. Steel short-circuits it, so its effective contribution is well below nominal.')+
+    field('Continuous board (interior, unbridged)',matSel('wallContMat'),'Continuous insulation board inboard of the frame. Steel does NOT bridge it — adds full R.')
+  );
+  setHTML('env-framing-mode',
+    field('Framing model',`<select onchange="updStr('framingMode',this.value)">`+
+      opt('takeoff','Member takeoff (truss / braced frame)',S.framingMode)+
+      opt('spacing','Simple studs on-center (quick estimate)',S.framingMode)+`</select>`,
+      'SN002 is a welded steel frame with diagonal bracing — no regular stud spacing. Member takeoff computes bridging from the actual steel: count × length × face width per wall. Spacing mode is a quick studs-o.c. approximation using the ASHRAE 90.1 App A table.')+
+    (S.framingMode==='spacing'
+      ? field('Stud spacing',`<select onchange="updStr('studSpacingIn',this.value)">`+opt('16','16″ o.c.',S.studSpacingIn)+opt('24','24″ o.c.',S.studSpacingIn)+`</select>`,'Wider spacing = less steel = higher effective cavity R.')
+      : '')
+  );
+  const ftw=el('env-framing-wrap'); if(ftw) ftw.style.display = S.framingMode==='takeoff' ? '' : 'none';
+  setHTML('env-roof-mats', field('Roof cavity insulation',matSel('roofCavMat')));
+  setHTML('env-floor-mats', field('Floor cavity insulation',matSel('floorCavMat')));
+  renderFramingTable();
+}
+// ---- steel framing takeoff table (member schedule) ----
+function renderFramingTable(){
+  const host=el('env-framing-table'); if(!host) return;
+  const surfOpt=(cur)=>['wall','roof','floor'].map(s=>`<option value="${s}"${cur===s?' selected':''}>${s}</option>`).join('');
+  let h=`<tr><th>Member group</th><th title="Which surface these members bridge.">surface</th>`+
+    `<th title="How many members in this group.">count</th><th title="Average member length, feet.">len (ft)</th>`+
+    `<th title="Face width — the steel dimension seen by the wall plane (flange), inches.">face (in)</th>`+
+    `<th title="Steel face area = count × length × face ÷ 12.">steel ft²</th><th></th></tr>`;
+  framingRows.forEach((r,i)=>{
+    const ft2=(+r.n||0)*(+r.lenFt||0)*((+r.faceIn||0)/12);
+    h+=`<tr><td class="name"><input type="text" value="${r.name}" onchange="updFraming(${i},'name',this.value)"></td>`+
+      `<td><select onchange="updFraming(${i},'surf',this.value)">${surfOpt(r.surf)}</select></td>`+
+      `<td><input type="number" step="1" min="0" value="${r.n}" oninput="updFraming(${i},'n',this.value)"></td>`+
+      `<td><input type="number" step="0.25" min="0" value="${r.lenFt}" oninput="updFraming(${i},'lenFt',this.value)"></td>`+
+      `<td><input type="number" step="0.125" min="0" value="${r.faceIn}" oninput="updFraming(${i},'faceIn',this.value)"></td>`+
+      `<td style="font-family:var(--font-mono);">${f(ft2,1)}</td>`+
+      `<td><button class="btn tiny" onclick="rmFramingRow(${i})" title="remove">✕</button></td></tr>`;
+  });
+  host.innerHTML=h;
+  const a=envAreas();
+  const line=(lbl,steel,area)=>{const raw=steel/area*100, eff=Math.min(90,raw*S.framingK);
+    return `<b>${lbl}</b> ${f(steel,1)} ft² steel / ${f(area,0)} ft² → <b>${f(raw,1)}%</b> raw · <b>${f(eff,1)}%</b> steel fraction used (×K)`;};
+  setHTML('env-framing-sum',
+    line('Walls:',steelFaceFt2('wall'),a.opaqueWall)+' &nbsp;·&nbsp; '+
+    line('Roof:',steelFaceFt2('roof'),a.roofA)+' &nbsp;·&nbsp; '+
+    line('Floor:',steelFaceFt2('floor'),a.floorA));
+}
+function updFraming(i,k,v){framingRows[i][k]=(k==='name'||k==='surf')?v:parseFloat(v)||0;if(k==='surf')renderFramingTable();else renderFramingTable0(i);recalc();}
+function renderFramingTable0(i){/* light refresh: recompute the row ft² + summary without rebuilding inputs (keeps focus) */
+  const host=el('env-framing-table'); if(!host||!host.rows||!host.rows[i+1])return;
+  const r=framingRows[i], ft2=(+r.n||0)*(+r.lenFt||0)*((+r.faceIn||0)/12);
+  const cells=host.rows[i+1].cells; if(cells&&cells[5])cells[5].textContent=f(ft2,1);
+  const a=envAreas();
+  const line=(lbl,steel,area)=>{const raw=steel/area*100, eff=Math.min(90,raw*S.framingK);
+    return `<b>${lbl}</b> ${f(steel,1)} ft² steel / ${f(area,0)} ft² → <b>${f(raw,1)}%</b> raw · <b>${f(eff,1)}%</b> steel fraction used (×K)`;};
+  setHTML('env-framing-sum',
+    line('Walls:',steelFaceFt2('wall'),a.opaqueWall)+' &nbsp;·&nbsp; '+
+    line('Roof:',steelFaceFt2('roof'),a.roofA)+' &nbsp;·&nbsp; '+
+    line('Floor:',steelFaceFt2('floor'),a.floorA));
+}
+function addFramingRow(){framingRows.push({name:'New member group',surf:'wall',n:1,lenFt:8,faceIn:1.5});renderFramingTable();recalc();}
+function rmFramingRow(i){framingRows.splice(i,1);renderFramingTable();recalc();}
+function setEnvPreset(cav,cont){S.wallCavMat=cav;S.wallContIn=cont;if(cont>0&&(!S.wallContMat||S.wallContMat==='none'))S.wallContMat='polyiso';renderInputs();recalc();}
+
+function renderEnvelope(){
+  const e=R.env; if(!e) return;
+  const zt=zoneTag(e.Uo), pass=e.targetOK;
+  // metric cards
+  setHTML('env-cards',
+    mcard('Wall R (eff)','hr·ft²·°F/Btu',f(e.Rwall,1),`${INS_LBL[S.wallCavMat]}${S.wallContIn>0?` + ${LEN(S.wallContIn,2)} cont.`:''}`,'hero') +
+    mcard('Roof R (eff)','',f(e.Rroof,1),`${INS_LBL[S.roofCavMat]}`) +
+    mcard('Floor R (eff)','',f(e.Rfloor,1),`${INS_LBL[S.floorCavMat]} · chassis bridge`) +
+    mcard('Window U','Btu/hr·ft²·°F',f(S.windowU,2),`R-${f(e.Rwin,1)} · SHGC ${f(S.windowSHGC,2)}`) +
+    mcard('UA','Btu/hr·°F',f(e.UA,1),'Σ Area ÷ R') +
+    mcard('Uo (overall)','Btu/hr·ft²·°F',f(e.Uo,3),`${zt} · ${e.b==='hud'?'HUD':'design'} basis`,'hero') +
+    mcard('Interior floor',uAu(),f(uA(e.intFloorFt2),1),`${LEN(e.intL,1)} × ${LEN(e.intW,1)} · wall ${LEN(e.wallThk,2)}/side`) +
+    mcard('Interior height',uLu(),f(uL(e.intH),1),'flat clg — slope/livability TBD')
+  );
+  // zone pass/fail notice
+  const nz=el('note-envelope');
+  if(nz){
+    nz.className='notice '+(pass?'teal':'amber');
+    nz.innerHTML=`<div class="notice-title"><i class="ti ti-${pass?'circle-check':'alert-triangle'}"></i>Uo ${f(e.Uo,3)} — ${pass?`meets Zone ${S.uoZone}`:`over Zone ${S.uoZone} cap (${f(UO_ZONE[Number(S.uoZone)],3)})`}</div>`+
+      `Overall heat-transmission coefficient <b>Uo = ${f(e.Uo,3)}</b> Btu/hr·ft²·°F (${f(e.Uo*5.678,3)} W/m²·K), computed on the <b>${e.b==='hud'?'HUD §3280.509(b) framing-fraction':'design (ASHRAE 90.1 App A eff-R)'}</b> basis. `+
+      `Passes: ${e.zonePass[1]?'Z1 ✓':'Z1 ✗'} · ${e.zonePass[2]?'Z2 ✓':'Z2 ✗'} · ${e.zonePass[3]?'Z3 ✓':'Z3 ✗'} (caps 0.116 / 0.096 / 0.079 — <a href="https://www.law.cornell.edu/cfr/text/24/3280.506" target="_blank" rel="noopener" style="color:inherit;">§3280.506</a>). `+
+      (e.b==='hud'
+        ? `<b>Framing per §3280.509(b):</b> steel taken as 15% of wall / 10% of roof &amp; floor in a parallel path — the code's “in absence of specific data” default. `
+        : (S.framingMode==='takeoff'
+          ? `<b>Steel bridging from the member takeoff:</b> walls ${f(e.ffWraw*100,1)}% steel face (×K ${f(S.framingK,2)} → ${f(e.ffWraw*100*S.framingK,1)}%), roof ${f(e.ffRraw*100,1)}% / floor ${f(e.ffFraw*100,1)}% — mapped onto the ASHRAE App A effective-R table by steel fraction (16″ o.c. studs ≈ 10.2%, 24″ ≈ 6.8%). Continuous board is unbridged and adds full R. `
+          : `<b>Steel bridging via the ASHRAE App A table:</b> cavity insulation between steel studs at ${S.studSpacingIn}″ o.c. counts at ~45–50% of nominal (Table A103.3.6.2). Continuous board is unbridged and adds full R. `))+
+      `<i>Member schedule is a placeholder until the real steel takeoff is entered. Roof/floor films &amp; chassis bridging are first-pass; the floor/outrigger path is likely the worst. Full method + reg links in “Method &amp; references” below.</i>`;
+  }
+  // assembly comparison — the 5 presets at the current basis
+  let ch=`<tr><th>Wall assembly</th><th>Wall R</th><th>Uo</th><th>Zone</th></tr>`;
+  ENV_PRESETS.forEach(p=>{
+    const rw=wallRFor(p.cav,p.cont,e.b), uo=envUoWith(rw,e);
+    const on=S.wallCavMat===p.cav && Math.abs(S.wallContIn-p.cont)<0.01;
+    ch+=`<tr${on?' style="font-weight:600;background:var(--color-background-secondary);"':''}><td class="name">${p.lbl}${on?' ←':''}</td><td>${f(rw,1)}</td><td>${f(uo,3)}</td><td>${zoneTag(uo)}</td></tr>`;
+  });
+  setHTML('env-compare',ch);
+  // proportional wall cross-section (outside → inside)
+  const layers=[
+    {n:'Steel bumper',t:S.bumperIn,c:'#565E68'},
+    {n:'Sheathing',t:S.sheathIn,c:'#8A7F72'},
+    {n:'Rain gap',t:S.rainGapIn,c:'#C2CAD0'},
+    {n:`Steel stud + ${INS_LBL[S.wallCavMat]}`,t:S.studDepthIn,c:'#79828C'},
+    {n:'Continuous board',t:S.wallContIn,c:'#185FA5'},
+    {n:'Interior panel',t:S.panelIn,c:'#B5824A'},
+  ].filter(l=>l.t>0);
+  const tot=layers.reduce((s,l)=>s+l.t,0)||1;
+  setHTML('env-stack', layers.map((l,i)=>{
+    const pct=l.t/tot*100, br=i<layers.length-1?'border-right:1px solid rgba(0,0,0,.18);':'';
+    const lab=pct>9?`<span style="font-size:10px;color:#fff;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.45);">${LEN(l.t,2)}</span>`:'';
+    return `<div title="${l.n}: ${LEN(l.t,2)}" style="flex:${l.t} ${l.t} 0;min-width:6px;background:${l.c};display:flex;align-items:center;justify-content:center;${br}">${lab}</div>`;
+  }).join(''));
+}
+
+// ============================================================================
+// THERMAL-LOADS ENGINE (P2) — heating & cooling design loads on the real
+// envelope (R.env). Structure ported from Charlie's xlsx Model sheet with the
+// reconciliation-memo corrections: effective R (steel bridging) everywhere,
+// door term in every conduction sum, HUD §3280.509(a) perimeter infiltration
+// on the HUD basis, no internal-gain credit on the certified heating number.
+// Btu/hr internally; ×BTUH_W for display in W.
+// ============================================================================
+const BTUH_W = 0.293071;                        // Btu/hr → W  (CLIMATES is defined up with the solar model — one source of truth)
+const ROOF_SOLAIR = {                           // Charlie's Ref!H:J — absorptance + 24h-avg sol-air uplift °F by roof colour
+  white:{lbl:'White / cool roof', a:0.25, up:12}, light:{lbl:'Light', a:0.45, up:20},
+  medium:{lbl:'Medium', a:0.65, up:26}, dark:{lbl:'Dark', a:0.85, up:32}, black:{lbl:'Black', a:0.95, up:36},
+};
+let PV_SHADE_UP = 3;                            // residual sol-air uplift °F under standoff PV — ESTIMATE, editable via Assumptions backend
+const OCC_W = {total:117, sensible:70};         // W per person, ASHRAE seated: total (cooling load) / sensible (heating credit)
+
+// ============================================================================
+// ASSUMPTIONS BACKEND — registry of every hardcoded placeholder/assumed
+// constant, editable via the password-gated Assumptions modal. ⚑ flags mark
+// values needing confirmation (PLACEHOLDER entries come pre-flagged).
+// Overrides + flags persist with the save payload and the defaults baseline.
+// ============================================================================
+const SOLAR = { panelW:595, qty:3, bifacialPct:0 };   // HD Hyundai HiN-T595NI: 595 W STC, N-type TOPCon BIFACIAL (80±10% bifaciality),
+                                                      // −0.30%/°C, NOCT 44°C, 89.7×44.7″ (27.9 ft² ea → 3 ≈ 93% of the 90 ft² roof).
+                                                      // Flush-mounted → rear-side gain ≈ 0; bifacialPct is the tested gap-gain lever.
+const ASSUME_REG=[];
+(function(){
+  const add=(id,grp,lbl,unit,src,ph,get,set,tnote,href)=>ASSUME_REG.push({id,grp,lbl,unit,src,ph:!!ph,get,set,def:get(),tnote:tnote||'',href:href||''});
+  add('film.wall','Films & assembly R','Air film — wall (int+ext)','R','ASHRAE',0,()=>FILM.wall,v=>FILM.wall=v);
+  add('film.roof','Films & assembly R','Air film — roof','R','ASHRAE',0,()=>FILM.roof,v=>FILM.roof=v);
+  add('film.floor','Films & assembly R','Air film — floor','R','ASHRAE',0,()=>FILM.floor,v=>FILM.floor=v);
+  add('rpi.wood','Films & assembly R','Sheathing (wood) R per inch','R/in','handbook',0,()=>MISC_RPI.wood,v=>MISC_RPI.wood=v);
+  add('rpi.pvc','Films & assembly R','Interior panel (PVC) R per inch','R/in','handbook',0,()=>MISC_RPI.pvc,v=>MISC_RPI.pvc=v);
+  add('rpi.steel','Films & assembly R','Steel R per inch','R/in','physics',0,()=>STEEL_RPI,v=>STEEL_RPI=v);
+  Object.keys(INS_RPI).filter(k=>k!=='none').forEach(k=>
+    add('ins.'+k,'Insulation R per inch',INS_LBL[k],'R/in','datasheet',0,()=>INS_RPI[k],v=>INS_RPI[k]=v));
+  add('occ.total','Thermal loads','Person heat — total (cooling)','W','ASHRAE seated',0,()=>OCC_W.total,v=>OCC_W.total=v);
+  add('occ.sens','Thermal loads','Person heat — sensible (heating credit)','W','ASHRAE seated',0,()=>OCC_W.sensible,v=>OCC_W.sensible=v);
+  add('pv.shadeUp','Thermal loads','Sol-air residual under PV panels','°F','ESTIMATE',1,()=>PV_SHADE_UP,v=>PV_SHADE_UP=v,
+      'Test: thermocouple/IR on the membrane under a panel vs exposed membrane, clear summer day — enter the avg uplift.');
+  Object.keys(ROOF_SOLAIR).forEach(k=>
+    add('solair.'+k,'Sol-air uplift by colour',ROOF_SOLAIR[k].lbl,'°F','Charlie Ref',0,()=>ROOF_SOLAIR[k].up,v=>ROOF_SOLAIR[k].up=v));
+  const CF=[['heatF','99% heating design','°F'],['coolF','1% cooling design','°F'],['winMeanF','Winter mean','°F'],['sumMeanF','Summer mean','°F'],
+            ['winPSH','Winter peak sun hours','h'],['sumPSH','Summer peak sun hours','h'],['winDayH','Winter daylight','h'],['sumDayH','Summer daylight','h']];
+  Object.keys(CLIMATES).forEach(c=>{const ph=(c==='ak'||c==='temperate');CF.forEach(([fld,l,u])=>
+    add(`clim.${c}.${fld}`,'Climate — '+CLIMATES[c].short,l,u,ph?'PLACEHOLDER':'Charlie / NWS-ASHRAE',ph,()=>CLIMATES[c][fld],v=>CLIMATES[c][fld]=v,
+        ph?'Confirm against ASHRAE design-condition tables / NWS normals for the actual market.':''));});
+  // solar array components — HD Hyundai HiN-T595NI (datasheet-confirmed); derate + bifacial gain to be backed by tests
+  add('sol.panelW','Solar array (components)','Panel rated power (STC, front)','W','Hyundai HiN-T595NI datasheet',0,()=>SOLAR.panelW,v=>SOLAR.panelW=v,
+      '595 W STC front-side, 0/+5 W positive tolerance, −0.30%/°C, NOCT 44°C (open-rack — flush mount runs hotter). Ignore reseller “659 W PTC” claims — that is the BSTC bifacial-boost figure.',
+      'https://www.solarelectricsupply.com/hd-hyundai-hin-t595ni-bifacial-solar-panel');
+  add('sol.qty','Solar array (components)','Panel quantity','#','design',0,()=>SOLAR.qty,v=>SOLAR.qty=v);
+  add('sol.bifacial','Solar array (components)','Bifacial rear-side gain','%','flush mount ≈ 0 — GAP TEST',1,()=>SOLAR.bifacialPct,v=>SOLAR.bifacialPct=v,
+      'Gap test planned. Published curve (high-albedo roof): flush ≈0%; 4–6″ ≈2–5%; 12″ ≈5–8%; 24″ ≈8–12%, saturating there. CAVEAT: 93% coverage + NO overhang → rear mostly sees its own shadow; expect ~1–4%, with the gap’s cell-cooling worth as much as the rear light. Full picture: ℹ popup. Enter the measured %.',
+      'https://iea-pvps.org/wp-content/uploads/2021/04/IEA-PVPS-T13-14_2021-Bifacial-Photovoltaic-Modules-and-Systems-report.pdf');
+  ASSUME_REG[ASSUME_REG.length-1].info='bifacial';   // attach the bifacial info popup to the sol.bifacial row just added
+  add('sol.derate','Solar array (components)','System derate (real ÷ nameplate)','%','decision 2026-07-16 — until array test',1,()=>S.solarDerate,v=>S.solarDerate=v,
+      'Held at 75% by decision (Zach, 2026-07-16) pending the effective-efficiency test: log a full clear day of array Wh; derate = Wh ÷ (rated W × that day’s PSH). Covers temp (flush-mount cell heat), wiring, MPPT, soiling.',
+      'https://pvwatts.nrel.gov/');
+  // design inputs that need test data before certification
+  add('test.ach','Design inputs to validate','Infiltration','ACH','ASSUMPTION',1,()=>S.ach,v=>S.ach=v,
+      'Blower-door test (or CO₂ tracer decay). Only measured data justifies < the HUD default treatment.');
+  add('test.windowU','Design inputs to validate','Window U-factor','U','generic default',1,()=>S.windowU,v=>S.windowU=v,
+      'Read the NFRC 100 label / cert sheet of the actual glazing product (§3280.508(e)).');
+  add('test.solarGlass','Design inputs to validate','Avg daytime sun on glass','Btu/hr·ft²','Charlie',0,()=>S.solarGlassBtu,v=>S.solarGlassBtu=v);
+  add('test.latent','Design inputs to validate','Latent fraction (cooling)','%','Charlie',0,()=>S.latentPct,v=>S.latentPct=v);
+})();
+let assumeFlags={}; ASSUME_REG.forEach(a=>{ if(a.ph) assumeFlags[a.id]=true; });
+let assumeNotes={};                     // per-entry flag-note overrides (default note = entry.tnote)
+let assumeUnlocked=false;
+function assumeNote(a){ return assumeNotes[a.id]!=null ? assumeNotes[a.id] : a.tnote; }
+function assumeOverrides(){const o={};ASSUME_REG.forEach(a=>{const v=a.get();if(Math.abs(v-a.def)>1e-9)o[a.id]=v;});return o;}
+function applyAssume(o){if(!o)return;ASSUME_REG.forEach(a=>{const v=o[a.id];if(v!=null&&isFinite(+v))a.set(+v);});}
+function defaultAssumeFlags(){const o={};ASSUME_REG.forEach(a=>{if(a.ph)o[a.id]=true;});return o;}
+function assumeFlagCount(){return Object.keys(assumeFlags).filter(k=>assumeFlags[k]).length;}
+function updAssumeBtn(){
+  const n=assumeFlagCount();
+  setHTML('assume-flag-n', n?`⚑ ${n} to back with test data`:'');
+  const flagged=ASSUME_REG.filter(a=>assumeFlags[a.id]);
+  setHTML('assume-flag-list', flagged.length
+    ? flagged.map(a=>`⚑ <b>${a.lbl}</b> <span style="color:var(--color-text-tertiary);">(${a.grp}${assumeNote(a)?` — ${assumeNote(a)}`:''})</span>`).join('<br>')
+    : 'Nothing flagged — all assumptions confirmed.');
+}
+function openAssumeModal(){const o=el('assume-overlay');if(!o)return;o.style.display='flex';
+  el('assume-gate').style.display=assumeUnlocked?'none':'block';
+  el('assume-editor').style.display=assumeUnlocked?'block':'none';
+  if(assumeUnlocked){renderAssumeTable();}else{el('as-pw-input').value='';el('as-pw-msg').textContent='';el('as-pw-input').focus();}}
+function closeAssumeModal(){const o=el('assume-overlay');if(o)o.style.display='none';}
+function unlockAssume(){
+  if((el('as-pw-input')||{}).value!=='1776'){const m=el('as-pw-msg');if(m)m.textContent='Incorrect password.';return;}
+  assumeUnlocked=true; el('assume-gate').style.display='none'; el('assume-editor').style.display='block'; renderAssumeTable();}
+function renderAssumeTable(){
+  const host=el('assume-body'); if(!host)return;
+  const groups=[],byGrp={};
+  ASSUME_REG.forEach(a=>{ if(!byGrp[a.grp]){byGrp[a.grp]=[];groups.push(a.grp);} byGrp[a.grp].push(a); });
+  let h='';
+  groups.forEach(g=>{
+    h+=`<div class="stage-label">${g}</div><table class="tbl" style="margin-bottom:4px;">`+
+       `<tr><th title="Checked = this value is an assumption that still needs test data or source confirmation. Unchecked = trusted (published / datasheet / decided). Check any value you start doubting." style="font-size:10px;line-height:1.2;">⚑ needs<br>test?</th><th style="text-align:left;">Parameter</th><th>Value</th><th>Unit</th><th>Source</th></tr>`;
+    byGrp[g].forEach(a=>{
+      const mod=Math.abs(a.get()-a.def)>1e-9;
+      h+=`<tr><td><input type="checkbox"${assumeFlags[a.id]?' checked':''} onchange="toggleAssumeFlag('${a.id}',this.checked)"></td>`+
+        `<td>${a.lbl}${a.info?` <i class="ti ti-info-circle help" style="cursor:pointer;color:var(--color-text-info);" title="open explainer" onclick="openInfo('${a.info}')"></i>`:''}${mod?` <b style="color:var(--color-text-info);" title="edited — shipped default ${a.def}">●</b>`:''}</td>`+
+        `<td><input type="number" step="any" value="${a.get()}" style="width:84px;" onchange="editAssume('${a.id}',this.value)" title="shipped default: ${a.def}"></td>`+
+        `<td>${a.unit}</td><td>${a.href?`<a href="${a.href}" target="_blank" rel="noopener" style="text-decoration:none;" title="open source">`:''}<span class="src-badge${a.ph?' ph':''}">${a.src}${a.href?' ↗':''}</span>${a.href?'</a>':''}</td></tr>`;
+      if(assumeFlags[a.id])
+        h+=`<tr><td></td><td colspan="4" style="text-align:left;padding-top:0;"><input type="text" value="${(assumeNote(a)||'').replace(/"/g,'&quot;')}" placeholder="flag note — what test/source will back this value?" `+
+           `style="width:100%;font-size:11px;color:var(--color-text-secondary);" onchange="editAssumeNote('${a.id}',this.value)"></td></tr>`;
+    });
+    h+=`</table>`;
+  });
+  // bottom: the test/validation checklist
+  const flagged=ASSUME_REG.filter(a=>assumeFlags[a.id]);
+  h+=`<div class="stage-label">⚑ Needs test data / confirmation (${flagged.length})</div>`+
+     `<div class="footnote" style="line-height:1.8;">`+
+     (flagged.length?flagged.map(a=>`⚑ <b>${a.lbl}</b> — ${assumeNote(a)||'<i>add a flag note</i>'}`).join('<br>'):'Nothing flagged.')+
+     `<br><br><b>These values are assumptions until backed by test data.</b> Run the test, enter the measured value above, and unflag. Flagged items ride along with saves and the defaults baseline, so the list survives until each one is closed out.</div>`;
+  host.innerHTML=h;
+}
+function editAssumeNote(id,v){ assumeNotes[id]=v; updAssumeBtn(); save(); }
+
+// ---- generic info popups (reusable: add a key here, open with openInfo('key') from anywhere) ----
+const INFO_POPUPS = {
+  bifacial: {
+    title:'<i class="ti ti-sun"></i>Bifacial gain, gap height & reflectors — HiN-T595NI',
+    html:`<div class="reflist">
+      <div class="refblock"><b>How rear-side gain works.</b> The rear face only makes power from light that bounces off a
+      surface <i>and reaches it</i>. Flush-mounted, the panel lies on the only surface that could reflect into it — the rear
+      stares at its own shadow → ≈0%. Raising the panel widens the rear's view of <i>sunlit</i> white membrane around the
+      edges. Panel bifaciality: 80±10% (rear W per rear W of light vs front).</div>
+      <div class="refblock"><b>Published curve — high-albedo (white, ~0.6–0.7) flat roofs:</b><br>
+      flush / &lt;2″ ≈ <b>0%</b> · 4–6″ ≈ <b>2–5%</b> · 12″ ≈ <b>5–8%</b> · 20–24″ ≈ <b>8–12%</b> · saturates ~24″ (1 m ceilings 10–15% aren't worth the structure).</div>
+      <div class="refblock"><b>SN002 reality check.</b> 3 panels cover ~93% of the 90 ft² roof and there is <b>no overhang</b> —
+      the sunlit white ring around the array is only ~6 ft², and the rear can't see past the roof edge at practical gaps.
+      Expect the <b>bottom of each band (~1–4%)</b>. The bigger prize of a gap is likely <b>cell cooling</b>: flush mounting
+      bakes the cells; under-panel airflow can recover ~2–4% via the temperature term of the derate. The gap test measures both
+      effects stacked — log array Wh at each height and the backend keeps bifacial % and derate as separate knobs.</div>
+      <div class="refblock"><b>"Bouncing" light in with white sheets / reflectors:</b>
+      <br>· <b>On the roof:</b> no gain — the membrane is already white; a sheet on white is albedo-neutral.
+      <br>· <b>On the ground around the unit:</b> barely helps — with no overhang, ground-reflected light can't reach the rear
+      except at grazing angles through the gap. Order of 1% at best.
+      <br>· <b>Angled perimeter reflectors</b> (white skirts/wings directing light into the gap): the only version that
+      genuinely feeds the rear — but wind load, weathering, and <b>non-uniform rear irradiance</b> (hot-spot / bypass-diode
+      activation) make it a poor permanent fixture. Front-side boosters have the same warranty/hot-spot caveats.
+      <br>· <b>As test instrumentation:</b> sheets are great — drape/remove white surfaces during the gap test to isolate the
+      albedo term from the cooling term cheaply.</div>
+      <div class="refblock" style="margin-bottom:0;"><b>Sources:</b>
+      <a href="https://iea-pvps.org/wp-content/uploads/2021/04/IEA-PVPS-T13-14_2021-Bifacial-Photovoltaic-Modules-and-Systems-report.pdf" target="_blank" rel="noopener">IEA PVPS Task 13 — Bifacial PV (2021)</a> ·
+      <a href="https://docs.nlr.gov/docs/fy20osti/75532.pdf" target="_blank" rel="noopener">NREL — bifacial field performance</a> ·
+      <a href="https://www.osti.gov/servlets/purl/1485567" target="_blank" rel="noopener">NREL/Sandia — irradiance model validation</a> ·
+      <a href="https://www.mdpi.com/1996-1073/18/16/4443" target="_blank" rel="noopener">MDPI — albedo/tilt/height parametric</a> ·
+      <a href="https://www.sciencedirect.com/science/article/abs/pii/S0960148121001828" target="_blank" rel="noopener">Elevated PV on a white flat roof</a> ·
+      <a href="https://www.solarelectricsupply.com/hd-hyundai-hin-t595ni-bifacial-solar-panel" target="_blank" rel="noopener">HiN-T595NI spec</a></div>
+    </div>`,
+  },
+};
+function openInfo(key){const p=INFO_POPUPS[key];if(!p)return;setHTML('info-title',p.title);setHTML('info-body',p.html);const o=el('info-overlay');if(o)o.style.display='flex';}
+function closeInfo(){const o=el('info-overlay');if(o)o.style.display='none';}
+function editAssume(id,val){const a=ASSUME_REG.find(x=>x.id===id);if(!a)return;const v=parseFloat(val);if(!isFinite(v))return;
+  a.set(v); syncClimatePSH(); renderInputs(); recalc(); save(); renderAssumeTable();}
+function toggleAssumeFlag(id,on){ if(on)assumeFlags[id]=true; else delete assumeFlags[id]; updAssumeBtn(); save(); }
+function resetAssume(){ ASSUME_REG.forEach(a=>a.set(a.def)); assumeFlags=defaultAssumeFlags(); assumeNotes={};
+  syncClimatePSH(); renderInputs(); recalc(); save(); renderAssumeTable(); updAssumeBtn(); }
+
+// avg electrical W dissipated indoors, live from the Energy loads table (HVAC row excluded — that's the machine, not a gain)
+function internalGainW(){ return loads.reduce((s,l)=> l.cat==='hvac' ? s : s + (+l.w||0)*(+l.hrs||0)/24, 0); }
+
+// one heating+cooling case at given outdoor temps; all loads Btu/hr
+function thermalCase(ToutH,ToutC){
+  const e=R.env, hud=S.envBasis==='hud';
+  const perimFt=2*(ENV.EX_L+ENV.EX_W)/12;
+  const volFt3=(e.intL*e.intW*e.intH)/1728;
+  const occ=R.occHead||0, plugW=internalGainW();
+  // --- heating: conduction + infiltration; certified number takes NO gain credit (§3280.510) ---
+  const TinH=hud?70:S.indoorSetF;
+  const dTh=Math.max(0,TinH-ToutH);
+  const hWall=e.opaqueWall/e.Rwall*dTh, hRoof=e.roofA/e.Rroof*dTh, hFloor=e.floorA/e.Rfloor*dTh;
+  const hWin=e.winA/e.Rwin*dTh, hDoor=e.doorA/e.Rdoor*dTh;
+  const condH=hWall+hRoof+hFloor+hWin+hDoor;
+  const infH = hud ? 0.7*Math.max(0,70-ToutH)*perimFt : 1.08*(S.ach*volFt3/60)*dTh;
+  const heatCert=condH+infH;
+  const gainsBtu=(occ*OCC_W.sensible+plugW)/BTUH_W;
+  const heatOper=Math.max(0,heatCert-gainsBtu);            // expected operating load (gains credited)
+  // --- cooling: sol-air conduction + infiltration + window solar + internal gains + latent ---
+  const TinC=hud?75:S.indoorSetF;
+  const up=(ROOF_SOLAIR[S.roofColor]||ROOF_SOLAIR.white).up;
+  const pvCov=Math.min(100,Math.max(0,+S.pvRoofCoverPct||0))/100;   // PV-shaded share of roof: gets PV_SHADE_UP, not the colour uplift
+  const upRoof=(1-pvCov)*up + pvCov*PV_SHADE_UP;
+  const upWall=(ROOF_SOLAIR[S.wallColor]||ROOF_SOLAIR.light).up*0.5;  // walls: own cladding colour, half uplift (orientation averaging)
+  const cRoof=e.roofA*((ToutC+upRoof)-TinC)/e.Rroof;
+  const cWall=e.opaqueWall*((ToutC+upWall)-TinC)/e.Rwall;
+  const cFloor=e.floorA*(ToutC-TinC)/e.Rfloor;
+  const cWin=e.winA*(ToutC-TinC)/e.Rwin, cDoor=e.doorA*(ToutC-TinC)/e.Rdoor;
+  const infC=1.08*(S.ach*volFt3/60)*Math.max(0,ToutC-TinC);   // ACH on both bases — §3280.509(a) is a heating-cert rule
+  const solar=e.winA*S.windowSHGC*S.solarGlassBtu;
+  const intern=(occ*OCC_W.total+plugW)/BTUH_W;
+  const sens=Math.max(0,cRoof+cWall+cFloor+cWin+cDoor+infC+solar+intern);
+  const lat=sens*(S.latentPct/100), cool=sens+lat;
+  return {ToutH,ToutC,TinH,TinC,dTh,hWall,hRoof,hFloor,hWin,hDoor,condH,infH,heatCert,gainsBtu,heatOper,
+          cRoof,cWall,cFloor,cWin,cDoor,infC,solar,intern,sens,lat,cool,perimFt,volFt3,occ,plugW,upRoof,upWall,pvCov};
+}
+function computeThermal(){
+  const cl=CLIMATES[S.climate]||CLIMATES.msp;
+  const ovr=+S.outdoorOvrF||0;
+  const ToutH=ovr!==0?ovr:(S.tempBasis==='mean'?cl.winMeanF:cl.heatF);
+  const ToutC=ovr!==0?ovr:(S.tempBasis==='mean'?cl.sumMeanF:cl.coolF);
+  const basis=thermalCase(ToutH,ToutC);
+  const sizing=thermalCase(cl.heatF,cl.coolF);              // sizing always at the 99% design extremes
+  return {cl,basis,sizing,coolTons:sizing.cool/12000};
+}
+
+// thermal-tab selects (climate preset, temperature basis, roof colour) — called from renderInputs like injectEnv
+function injectThermal(){
+  const opt=(v,l,cur)=>`<option value="${v}"${String(cur)===String(v)?' selected':''}>${l}</option>`;
+  const field=(lbl,inner,help)=>`<div class="field"><div class="field-lbl">${lbl}${help?` <i class="ti ti-help-circle help" title="${help}"></i>`:''}</div><div class="field-input">${inner}</div></div>`;
+  setHTML('th-climate',
+    field('Location (shared with Variables)',`<select onchange="updClimate(this.value)">`+
+      Object.keys(CLIMATES).map(k=>opt(k,CLIMATES[k].lbl,S.climate)).join('')+opt('custom','Custom (use outdoor override)',S.climate)+`</select>`,
+      'The SAME climate selection as the Variables tab — it drives solar PSH there and the design temperatures here. Austin/Minneapolis are Charlie’s NWS/ASHRAE data; Fairbanks/Temperate design temps are placeholders. Custom falls back to Minneapolis temps — steer with the outdoor override below.')+
+    field('Temperature basis',`<select onchange="updStr('tempBasis',this.value)">`+
+      opt('design99','99% design extreme (sizing)',S.tempBasis)+opt('mean','Seasonal mean (typical energy)',S.tempBasis)+`</select>`,
+      'Design extreme is the sizing/certificate case; seasonal mean approximates a typical day for energy estimates. Sizing cards always use the extremes regardless.'));
+  setHTML('th-solar',
+    field('Exposed roof colour (sol-air)',`<select onchange="updStr('roofColor',this.value)">`+
+      Object.keys(ROOF_SOLAIR).map(k=>opt(k,`${ROOF_SOLAIR[k].lbl} — +${ROOF_SOLAIR[k].up}°F sol-air`,S.roofColor)).join('')+`</select>`,
+      'Colour of the roof membrane where it is NOT shaded by solar panels. Darker surfaces absorb more sun and act hotter than the air; the uplift is a 24-h average added to the outdoor temp in the cooling case.')+
+    field('Wall / cladding colour (sol-air)',`<select onchange="updStr('wallColor',this.value)">`+
+      Object.keys(ROOF_SOLAIR).map(k=>opt(k,`${ROOF_SOLAIR[k].lbl} — +${ROOF_SOLAIR[k].up/2}°F on walls`,S.wallColor)).join('')+`</select>`,
+      'Exterior cladding colour. Walls get HALF the colour uplift (orientation averaging — only some walls face the sun at a time). Was slaved to roof colour in Charlie’s model; now independent since the roof is mostly PV-shaded.'));
+}
+
+function renderThermal(){
+  const t=R.thermal; if(!t) return;
+  const b=t.basis, sz=t.sizing, hud=S.envBasis==='hud';
+  const W=btu=>btu*BTUH_W;
+  const basisLbl=S.tempBasis==='mean'?'seasonal mean':'99% design';
+  setHTML('th-climate-note',
+    `Basis temps in use: heating <b>${f(b.ToutH,0)}°F</b> out / ${f(b.TinH,0)}°F in (ΔT ${f(b.dTh,0)}°F) · cooling <b>${f(b.ToutC,0)}°F</b> out / ${f(b.TinC,0)}°F in`+
+    ((+S.outdoorOvrF||0)!==0?' · <b>outdoor override active</b>':'')+
+    ` · interior volume ${f(b.volFt3,0)} ft³ · perimeter ${f(b.perimFt,0)} ft.`);
+  setHTML('th-heat-cards',
+    mcard('Design heating load','W',f(W(sz.heatCert),0),`${f(sz.heatCert,0)} Btu/hr @ ${f(sz.ToutH,0)}°F · no gain credit`,'hero')+
+    mcard('At basis temp','W',f(W(b.heatCert),0),`${basisLbl} ${f(b.ToutH,0)}°F · ΔT ${f(b.dTh,0)}°F`)+
+    mcard('Operating (gains credited)','W',f(W(b.heatOper),0),`− ${f(b.occ*OCC_W.sensible+b.plugW,0)} W people + plugs`)+
+    mcard('Infiltration share','W',f(W(b.infH),0),hud?`HUD 0.7·T·perimeter (${f(b.perimFt,0)} ft)`:`${f(S.ach,2)} ACH · ${f(b.volFt3,0)} ft³`)
+  );
+  setHTML('th-cool-cards',
+    mcard('Design cooling load','W',f(W(sz.cool),0),`${f(sz.cool,0)} Btu/hr @ ${f(sz.ToutC,0)}°F · ${f(t.coolTons,2)} tons`,'hero')+
+    mcard('At basis temp','W',f(W(b.cool),0),`${basisLbl} ${f(b.ToutC,0)}°F · sens ${f(W(b.sens),0)} + lat ${f(W(b.lat),0)}`)+
+    mcard('Window solar','W',f(W(b.solar),0),`SHGC ${f(S.windowSHGC,2)} × ${f(S.solarGlassBtu,0)} Btu/hr·ft²`)+
+    mcard('Internal gains','W',f(W(b.intern),0),`${b.occ} × ${OCC_W.total} W + ${f(b.plugW,0)} W plugs`)
+  );
+  setHTML('th-solar-note',
+    `Effective roof sol-air uplift: <b>+${f(b.upRoof,1)}°F</b> — ${f(b.pvCov*100,0)}% PV-shaded (+${PV_SHADE_UP}°F residual) + ${f((1-b.pvCov)*100,0)}% exposed ${ROOF_SOLAIR[S.roofColor]?ROOF_SOLAIR[S.roofColor].lbl.toLowerCase():'white'} (+${(ROOF_SOLAIR[S.roofColor]||ROOF_SOLAIR.white).up}°F). `+
+    `Walls: <b>+${f(b.upWall,1)}°F</b> (${ROOF_SOLAIR[S.wallColor]?ROOF_SOLAIR[S.wallColor].lbl.toLowerCase():'light'} cladding, half uplift for orientation). Window solar = SHGC × avg daytime sun × glazing area — SHGC and glazing area live on the Envelope tab. `+
+    `<a style="cursor:pointer;color:var(--color-text-info);" onclick="openInfo('bifacial')"><i class="ti ti-info-circle"></i> bifacial gain &amp; gap height</a>`);
+  setHTML('th-gains-note',
+    `People: <b>${b.occ}</b> (from Variables occupancy) × ${OCC_W.total} W total cooling / ${OCC_W.sensible} W sensible heating credit (ASHRAE seated). `+
+    `Plug gains: <b>${f(b.plugW,0)} W</b> average, live from the Energy tab loads table (HVAC row excluded).`);
+  // notice — headline numbers + what the basis means
+  const nt=el('note-thermal');
+  if(nt){
+    const comps=[['walls',b.hWall],['roof',b.hRoof],['floor',b.hFloor],['windows',b.hWin],['door',b.hDoor],['infiltration',b.infH]];
+    comps.sort((x,y)=>y[1]-x[1]);
+    nt.className='notice teal';
+    nt.innerHTML=`<div class="notice-title"><i class="ti ti-temperature"></i>Design loads — heat ${f(W(sz.heatCert),0)} W · cool ${f(W(sz.cool),0)} W (${f(t.coolTons,2)} t)</div>`+
+      `Computed on the <b>${hud?'HUD certificate':'design'}</b> basis (set on the Envelope tab): `+
+      (hud?`indoor 70/75&nbsp;°F, §3280.509(b) framing fractions, §3280.509(a) perimeter infiltration — the certified heating load takes no internal-gain credit. `
+          :`indoor ${f(S.indoorSetF,0)}&nbsp;°F, ASHRAE effective-R with steel bridging, ${f(S.ach,2)}&nbsp;ACH infiltration. `)+
+      `Biggest heating drivers: <b>${comps[0][0]} ${f(W(comps[0][1]),0)} W</b>, then ${comps[1][0]} ${f(W(comps[1][1]),0)} W. `+
+      `Expected operating heat (gains credited): <b>${f(W(b.heatOper),0)} W</b>. `+
+      `<i>The Energy tab still carries the flat 120 W HVAC placeholder — replaced by load ÷ COP in the next phase (P3).</i>`;
+  }
+  // breakdown table (basis case)
+  const dash='<td>—</td>', cell=v=>`<td>${f(v,0)}</td><td>${f(v*BTUH_W,0)}</td>`;
+  let h=`<tr><th>Component</th><th>Heat Btu/hr</th><th>Heat W</th><th>Cool Btu/hr</th><th>Cool W</th></tr>`;
+  h+=`<tr><td class="name">Walls (conduction · sol-air +${f(b.upWall,1)}°F)</td>${cell(b.hWall)}${cell(b.cWall)}</tr>`;
+  h+=`<tr><td class="name">Roof (conduction · sol-air +${f(b.upRoof,1)}°F eff, ${f(b.pvCov*100,0)}% PV-shaded)</td>${cell(b.hRoof)}${cell(b.cRoof)}</tr>`;
+  h+=`<tr><td class="name">Floor (conduction)</td>${cell(b.hFloor)}${cell(b.cFloor)}</tr>`;
+  h+=`<tr><td class="name">Windows (conduction)</td>${cell(b.hWin)}${cell(b.cWin)}</tr>`;
+  h+=`<tr><td class="name">Door (conduction)</td>${cell(b.hDoor)}${cell(b.cDoor)}</tr>`;
+  h+=`<tr><td class="name">Infiltration${hud?' (heat: HUD perimeter)':''}</td>${cell(b.infH)}${cell(b.infC)}</tr>`;
+  h+=`<tr><td class="name">Window solar (SHGC)</td>${dash}${dash}${cell(b.solar)}</tr>`;
+  h+=`<tr><td class="name">Internal gains (people + plugs)</td><td colspan="2" style="text-align:right;">credit −${f(b.gainsBtu,0)}*</td>${cell(b.intern)}</tr>`;
+  h+=`<tr><td class="name">Latent (×${f(S.latentPct,0)}%)</td>${dash}${dash}${cell(b.lat)}</tr>`;
+  h+=`<tr class="total"><td class="name">TOTAL (certified heat · total cool)</td>${cell(b.heatCert)}${cell(b.cool)}</tr>`;
+  setHTML('th-breakdown',h+`<tr><td colspan="5" style="text-align:left;font-size:11px;color:var(--color-text-secondary);">* gain credit is informational — not in the certified heating total.</td></tr>`);
+}
+
 function recalc(){
   // ---------- OCCUPANCY (shared) ----------
   S.occupancy = (S.adults||0)+(S.children||0)+(S.guests||0);          // head count
@@ -1333,6 +2243,14 @@ function recalc(){
   const hotFrac=hotFracAt(S.setpointF);
   const tempsOK=tempsValid();
   Object.assign(R,{occHead:S.occupancy, occEq, hotFrac, tempsOK});
+
+  // ---------- ENVELOPE (assembly R w/ steel bridging → UA → Uo → HUD zone) ----------
+  R.env = computeEnv();
+  renderEnvelope();
+
+  // ---------- THERMAL LOADS (heating/cooling design loads on the real envelope) ----------
+  R.thermal = computeThermal();
+  renderThermal();
 
   // ---------- DEMAND ----------
   let totalFresh=0,hotDaily=0,greyDaily=0,autoFresh=0,autoGrey=0;
@@ -1545,7 +2463,8 @@ function recalc(){
       ` Edit pack parameters via the battery spec button. V5° nominal 51.2 V, LFP.`;
   }
 
-  // ---------- SOLAR (generation vs load; scenario brackets the range) ----------
+  // ---------- SOLAR (generation vs load; climate+season brackets the range) ----------
+  S.solarW = SOLAR.panelW * SOLAR.qty * (1 + (SOLAR.bifacialPct||0)/100);   // component-derived; bifacial gain = tested gap lever
   const solarWhDay=S.solarW*S.solarPSH*(S.solarDerate/100);
   const solarCoverPct=totalLoadWh>0?solarWhDay/totalLoadWh*100:0;
   const solarNet=solarWhDay-totalLoadWh;
@@ -1557,17 +2476,17 @@ function recalc(){
     mcard('Net daily','Wh/day',(solarNet>=0?'+':'')+f(solarNet,0),solarNet>=0?'surplus → recharges':'deficit → draws bank') +
     mcard('Battery lasts',solarNet<0?'days':'',solarNet<0?f(solarDrainDays,1):'∞',solarNet<0?'at this harvest':'solar ≥ load')
   );
-  const akWh=S.solarW*SOLAR_SCEN['ak-winter']*(S.solarDerate/100), txWh=S.solarW*SOLAR_SCEN['tx-summer']*(S.solarDerate/100);
+  const akWh=S.solarW*CLIMATES.ak.winPSH*(S.solarDerate/100), txWh=S.solarW*CLIMATES.austin.sumPSH*(S.solarDerate/100);
   const nsv=el('note-solar');
   if(nsv){
     const ok=solarNet>=0 || solarDrainDays>=S.powerDays;
     nsv.className='notice '+(ok?'teal':'amber');
-    nsv.innerHTML=`<div class="notice-title"><i class="ti ti-${ok?'circle-check':'alert-triangle'}"></i>Solar makeup — ${scenLabel(S.solarScenario)}</div>`+
+    nsv.innerHTML=`<div class="notice-title"><i class="ti ti-${ok?'circle-check':'alert-triangle'}"></i>Solar makeup — ${climLabel()}</div>`+
       `A ${f(S.solarW,0)} W array at ${f(S.solarPSH,1)} peak-sun-hours (${S.solarDerate}% derate) harvests <b>${f(solarWhDay/1000,2)} kWh/day</b> — <b>${f(solarCoverPct,0)}%</b> of the ${f(totalLoadWh/1000,2)} kWh load. `+
       (solarNet>=0
         ? `Surplus of <b>${f(solarNet,0)} Wh/day</b> recharges the bank once loads are met. `
         : `Deficit of <b>${f(-solarNet,0)} Wh/day</b> draws the bank down — it would last <b>${f(solarDrainDays,1)} days</b> at this harvest. `)+
-      `Range for this array: Alaska midwinter ≈ <b>${f(akWh/1000,2)} kWh/day</b>, Texas summer ≈ <b>${f(txWh/1000,2)} kWh/day</b>. The ${S.powerDays}-day battery autonomy remains the no-sun worst case.`;
+      `Range for this array: Fairbanks midwinter ≈ <b>${f(akWh/1000,2)} kWh/day</b>, Austin summer ≈ <b>${f(txWh/1000,2)} kWh/day</b>. The ${S.powerDays}-day battery autonomy remains the no-sun worst case.`;
   }
 
   // ---------- HOT WATER SUB-TABS (render after battery so %-of-bank is known) ----------
@@ -1590,7 +2509,8 @@ function recalc(){
     mcard('Total load','Wh/day',f(R.totalLoadWh,0),'water + other') +
     mcard('Battery bank','kWh',f(R.installedWh/1000,2),`${R.modules}× Pytes V5° installed`,'hero') +
     mcard('Peak current','A DC',f(R.peakAmps,1),'heater + pump') +
-    mcard('Solar makeup','%',f(R.solarCoverPct,0),`${scenLabel(S.solarScenario)}`) +
+    mcard('Solar makeup','%',f(R.solarCoverPct,0),`${climLabel()}`) +
+    mcard('Envelope Uo','Btu/hr·ft²·°F',f(R.env.Uo,3),`${zoneTag(R.env.Uo)} · vs Z${S.uoZone} ${R.env.targetOK?'✓':'✗'}`,'hero') +
     mcard('Toilet liquid',uVu()+'/day',f(uV(R.liquidGalDay),2),S.toiletMode==='urine-sep'?'urine sep':'leachate')
   );
 
@@ -2134,12 +3054,12 @@ function renderCompliance(){
 // there; the local file:// copy keeps its own separate memory.
 const STORAGE_KEY = 'uplift-water-planner-v3';   // v3: added fixture `auto` flag + reviewer fixes — discard stale state
 const APP_VERSION = 'v39';   // optional human label; the build stamp below is the source of truth
-const BUILD_STAMP = '2026-07-13 17:24 UTC (build 48)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
+const BUILD_STAMP = '2026-07-16 19:29 UTC (build 49)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
 let booted = false;
 function setStatus(msg,icon){ setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`); }
 function save(){
   try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({v:6, S, fixtures, showerHeads, pumpLibrary, activePump, pumpCurve, loads, activeTab, hwTab, unitSys}));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({v:6, S, fixtures, showerHeads, pumpLibrary, activePump, pumpCurve, loads, framingRows, assume:assumeOverrides(), assumeFlags, assumeNotes, activeTab, hwTab, unitSys}));
     if(booted) setStatus('Auto-saved','check');
   }catch(e){ /* private mode / storage disabled — run without persistence */ }
 }
@@ -2150,6 +3070,7 @@ function load(){
     const d = JSON.parse(raw);
     if(d && d.S) Object.assign(S, d.S);
     if(d && d.S && d.S.daysAutonomy!=null && d.S.waterDays==null){ S.waterDays=d.S.daysAutonomy; S.powerDays=d.S.daysAutonomy; }  // migrate old single-autonomy saves
+    if(d && d.S && !d.S.season && d.S.solarScenario) migrateClimate(d.S.solarScenario);   // v6: solarScenario → shared climate+season
     if(d && Array.isArray(d.fixtures)) fixtures = d.fixtures;
     if(d && Array.isArray(d.showerHeads)) showerHeads = d.showerHeads;
     if(d && Array.isArray(d.pumpLibrary) && d.pumpLibrary.length){          // new: full candidate library
@@ -2160,6 +3081,10 @@ function load(){
       pumpLibrary = [{name:'Saved pump', curve:d.pumpCurve}]; activePump=0; reptrPump();
     }
     if(d && Array.isArray(d.loads)) loads = d.loads;
+    if(d && Array.isArray(d.framingRows) && d.framingRows.length) framingRows = d.framingRows;
+    if(d && d.assume) applyAssume(d.assume);
+    if(d && d.assumeFlags) assumeFlags = d.assumeFlags;
+    if(d && d.assumeNotes) assumeNotes = d.assumeNotes;
     if(d && d.activeTab) activeTab = d.activeTab;
     if(d && typeof d.hwTab==='number') hwTab = d.hwTab;
     if(d && (d.unitSys==='metric'||d.unitSys==='imperial')) unitSys = d.unitSys;
@@ -2172,6 +3097,11 @@ function resetDefaults(){
   showerHeads = JSON.parse(JSON.stringify(DEFAULTS.showerHeads));
   pumpLibrary = JSON.parse(JSON.stringify(DEFAULTS.pumpLibrary)); activePump=0; reptrPump();
   loads       = JSON.parse(JSON.stringify(DEFAULTS.loads));
+  framingRows = JSON.parse(JSON.stringify(DEFAULTS.framingRows));
+  ASSUME_REG.forEach(a=>a.set(a.def)); applyAssume(DEFAULTS.assume);
+  assumeFlags = DEFAULTS.assumeFlags ? JSON.parse(JSON.stringify(DEFAULTS.assumeFlags)) : defaultAssumeFlags();
+  assumeNotes = DEFAULTS.assumeNotes ? JSON.parse(JSON.stringify(DEFAULTS.assumeNotes)) : {};
+  updAssumeBtn();
   pumpBgImg   = null;
   if(DEFAULTS.unitSys) unitSys = DEFAULTS.unitSys;
   try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
@@ -2188,6 +3118,10 @@ const DEFAULTS = {
   showerHeads: JSON.parse(JSON.stringify(showerHeads)),
   pumpLibrary: JSON.parse(JSON.stringify(pumpLibrary)),
   loads:       JSON.parse(JSON.stringify(loads)),
+  framingRows: JSON.parse(JSON.stringify(framingRows)),
+  assume:      assumeOverrides(),                       // {} at ship — captures pre-load defaults
+  assumeFlags: JSON.parse(JSON.stringify(assumeFlags)),
+  assumeNotes: {},
   unitSys:     unitSys,
 };
 
@@ -2203,6 +3137,10 @@ const DEFAULTS_KEY = 'uplift-water-planner-defaults-v3';   // bumped with the sc
     if(Array.isArray(d.pumpLibrary)) DEFAULTS.pumpLibrary=d.pumpLibrary;
     else if(Array.isArray(d.pumpCurve)) DEFAULTS.pumpLibrary=[{name:'Saved pump',curve:d.pumpCurve}];
     if(Array.isArray(d.loads)) DEFAULTS.loads=d.loads;
+    if(Array.isArray(d.framingRows)&&d.framingRows.length) DEFAULTS.framingRows=d.framingRows;
+    if(d.assume) DEFAULTS.assume=d.assume;
+    if(d.assumeFlags) DEFAULTS.assumeFlags=d.assumeFlags;
+    if(d.assumeNotes) DEFAULTS.assumeNotes=d.assumeNotes;
     if(d.unitSys) DEFAULTS.unitSys=d.unitSys;
   }catch(e){}
 })();
@@ -2213,9 +3151,9 @@ function closePwModal(){const o=el('pw-overlay');if(o)o.style.display='none';}
 function confirmSetDefault(){
   const v=(el('pw-input')||{}).value;
   if(v!=='1776'){const m=el('pw-msg');if(m)m.textContent='Incorrect password.';return;}
-  const snap={S:JSON.parse(JSON.stringify(S)),fixtures:JSON.parse(JSON.stringify(fixtures)),showerHeads:JSON.parse(JSON.stringify(showerHeads)),pumpLibrary:JSON.parse(JSON.stringify(pumpLibrary)),loads:JSON.parse(JSON.stringify(loads)),unitSys};
+  const snap={S:JSON.parse(JSON.stringify(S)),fixtures:JSON.parse(JSON.stringify(fixtures)),showerHeads:JSON.parse(JSON.stringify(showerHeads)),pumpLibrary:JSON.parse(JSON.stringify(pumpLibrary)),loads:JSON.parse(JSON.stringify(loads)),framingRows:JSON.parse(JSON.stringify(framingRows)),assume:assumeOverrides(),assumeFlags:JSON.parse(JSON.stringify(assumeFlags)),assumeNotes:JSON.parse(JSON.stringify(assumeNotes)),unitSys};
   try{localStorage.setItem(DEFAULTS_KEY,JSON.stringify(snap));}catch(e){}
-  Object.assign(DEFAULTS.S,snap.S);DEFAULTS.fixtures=snap.fixtures;DEFAULTS.showerHeads=snap.showerHeads;DEFAULTS.pumpLibrary=snap.pumpLibrary;DEFAULTS.loads=snap.loads;DEFAULTS.unitSys=snap.unitSys;
+  Object.assign(DEFAULTS.S,snap.S);DEFAULTS.fixtures=snap.fixtures;DEFAULTS.showerHeads=snap.showerHeads;DEFAULTS.pumpLibrary=snap.pumpLibrary;DEFAULTS.loads=snap.loads;DEFAULTS.framingRows=snap.framingRows;DEFAULTS.assume=snap.assume;DEFAULTS.assumeFlags=snap.assumeFlags;DEFAULTS.assumeNotes=snap.assumeNotes;DEFAULTS.unitSys=snap.unitSys;
   closePwModal();setStatus('Saved as new default baseline','lock');
 }
 // ---- battery spec / parameters modal ----
@@ -2226,8 +3164,15 @@ function closeDiagModal(){const o=el('diag-overlay');if(o)o.style.display='none'
 
 setHTML('app-version', APP_VERSION + ' · ' + BUILD_STAMP);
 const restored = load();
+// deep-link: #env / #power / … opens that tab directly (also handy for testing)
+const hashTab=(location.hash||'').replace('#','');
+if(TABS.some(t=>t.id===hashTab)) activeTab=hashTab;
 if(!restored){   // fresh browser: adopt the (possibly admin-set) default baseline
   Object.assign(S, JSON.parse(JSON.stringify(DEFAULTS.S)));
+  if(!DEFAULTS.S.season && DEFAULTS.S.solarScenario) migrateClimate(DEFAULTS.S.solarScenario);   // pre-climate baseline
+  applyAssume(DEFAULTS.assume);
+  if(DEFAULTS.assumeFlags) assumeFlags = JSON.parse(JSON.stringify(DEFAULTS.assumeFlags));
+  if(DEFAULTS.assumeNotes) assumeNotes = JSON.parse(JSON.stringify(DEFAULTS.assumeNotes));
   fixtures    = JSON.parse(JSON.stringify(DEFAULTS.fixtures));
   showerHeads = JSON.parse(JSON.stringify(DEFAULTS.showerHeads));
   pumpLibrary = JSON.parse(JSON.stringify(DEFAULTS.pumpLibrary)); activePump=0; reptrPump();
@@ -2235,6 +3180,8 @@ if(!restored){   // fresh browser: adopt the (possibly admin-set) default baseli
   if(DEFAULTS.unitSys) unitSys=DEFAULTS.unitSys;
 }
 updUnitBtn();
+updAssumeBtn();
+try{ if(localStorage.getItem('uplift-assume-dd')==='1'){const dd=el('assume-dd'); if(dd) dd.open=true;} }catch(e){}   // dropdown survives live-reloads
 renderTabs();
 renderHwTabs();
 renderInputs();
