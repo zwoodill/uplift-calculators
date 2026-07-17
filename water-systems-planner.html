@@ -302,8 +302,11 @@ svg{display:block;max-width:100%;height:auto;}
       <div id="assume-editor" style="display:none;">
         <div class="info-bar" style="margin-bottom:10px;"><b>⚑ = flagged</b>: value needs confirmation before anything gets certified — <b>PLACEHOLDER</b> badges come pre-flagged. Edits apply to the whole planner instantly, auto-save in this browser, and ride along with <b>Set as default</b>. A <b style="color:var(--color-text-info);">●</b> marks a value edited away from the shipped default (hover the input for it). The steel member schedule — the other big placeholder — is edited directly on the Envelope tab.</div>
         <div id="assume-body"></div>
-        <div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px;">
-          <button class="btn" onclick="resetAssume()"><i class="ti ti-rotate"></i> Reset all to shipped values</button>
+        <div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px;flex-wrap:wrap;">
+          <span style="display:flex;gap:8px;">
+            <button class="btn" onclick="resetAssume()"><i class="ti ti-rotate"></i> Reset all to shipped values</button>
+            <button class="btn" onclick="copyAssumeState()" title="Copies overrides + flags + notes as JSON — paste to Zach/Claude to make them team-wide shipped defaults"><i class="ti ti-copy"></i> Copy state for commit</button>
+          </span>
           <button class="btn" onclick="closeAssumeModal()">Done</button>
         </div>
       </div>
@@ -409,6 +412,7 @@ svg{display:block;max-width:100%;height:auto;}
         <p style="font-size:12px;color:var(--color-text-secondary);line-height:1.6;margin:8px 0;">Every hardcoded physics / reference / component constant behind the calculators — air films, insulation R-per-inch, sol-air uplifts, occupant heat, climate design temps, solar panel specs. <b>⚑ flagged</b> = an assumption that needs test data or source confirmation before anything gets certified.</p>
         <div class="footnote" id="assume-flag-list" style="margin-bottom:8px;"></div>
         <button class="btn" onclick="openAssumeModal()"><i class="ti ti-lock"></i> Open backend editor (password)</button>
+        <div class="footnote" style="margin-top:6px;">Regulatory gray-area questions live with the project docs: <code>SN002\thermals\DAPIA_questions.md</code></div>
       </details>
     </div>
   </section>
@@ -991,7 +995,7 @@ const S = {
   budgetWh:4500,
   batteryDoDPct:90, systemEffPct:95, battModKwh:5.12, battModAh:100, battNomV:51.2, battModules:2,
   // solar — scenario sets peak-sun-hours; Alaska winter & Texas summer bracket the range
-  solarW:1800, solarPSH:2.5, solarDerate:75,   // 3 × 600 W panels; PSH auto-set from climate+season (msp winter default)
+  solarW:1785, solarPSH:6.8, solarDerate:75,   // solarW computed from panels; PSH auto-set from climate+season (Austin summer default)
   // hot-water control logic — floor = setpointF (Legionella-safe); boost banks solar surplus as heat
   controlMode:'thermal-battery', boostSetpointF:160,
   // composting toilet — urine separation to a tank is the default
@@ -1013,8 +1017,8 @@ const S = {
   roofColor:'white',                 // exposed roof membrane colour (sol-air driver)
   wallColor:'light',                 // wall/cladding colour — own sol-air driver (was slaved to roof colour in Charlie's model)
   // ---- THERMAL LOADS (P2 — Charlie's load structure on the real envelope) ----
-  climate:'msp',                     // location — ONE shared climate (solar PSH/daylight + thermal design temps)
-  season:'winter',                   // season for the solar/energy snapshot (thermal computes both design cases regardless)
+  climate:'austin',                  // location — ONE shared climate (solar PSH/daylight + thermal design temps); Zach: default Texas
+  season:'summer',                   // season for the solar/energy snapshot (thermal computes both design cases regardless)
   pvRoofCoverPct:90,                 // % of roof shaded by standoff PV — that share gets +3°F residual, not the colour uplift
   tempBasis:'design99',              // 'design99' = 99% design extreme (sizing) | 'mean' = seasonal mean (typical energy)
   indoorSetF:72,                     // design-basis indoor setpoint (HUD basis pins 70°F heating / 75°F cooling)
@@ -1255,7 +1259,6 @@ const FIELDS = {
     ['ach','Air changes per hour','ACH',0.05,'Design-basis infiltration. 0.5 is a conservative default; only a blower-door test justifies lower. The HUD basis replaces this with 0.7·T·perimeter (§3280.509(a)) for heating.'],
   ],
   'grp-th-solar':[
-    ['pvRoofCoverPct','PV roof coverage','%',5,'Share of the roof shaded by standoff-mounted solar panels. Panels intercept the sun (some becomes electricity, the rest re-radiates above the roof), so the covered area gets only a small residual sol-air uplift (~+3°F) instead of the colour uplift. SN002 plan: ~90% covered, white membrane underneath.'],
     ['solarGlassBtu','Avg daytime sun on glass','Btu/hr·ft²',5,'Average solar flux reaching the glazing during daylight, orientation-averaged. Multiplied by SHGC and glazing area for the cooling solar gain.','sflux'],
   ],
   'grp-th-gains':[
@@ -1977,7 +1980,8 @@ const ROOF_SOLAIR = {                           // Charlie's Ref!H:J — absorpt
   medium:{lbl:'Medium', a:0.65, up:26}, dark:{lbl:'Dark', a:0.85, up:32}, black:{lbl:'Black', a:0.95, up:36},
 };
 let PV_SHADE_UP = 3;                            // residual sol-air uplift °F under standoff PV — ESTIMATE, editable via Assumptions backend
-const OCC_W = {total:117, sensible:70};         // W per person, ASHRAE seated: total (cooling load) / sensible (heating credit)
+const OCC_W = {total:117, sensible:70};         // W per ADULT, ASHRAE seated-at-rest: total (cooling load) / sensible (heating credit)
+let OCC_CHILD_FRAC = 0.7;                       // children emit ~70% of adult heat (mass/metabolism); mirrors the water tab's child weighting idea
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║ HVAC SECTION — Lucas: this is your block.                                 ║
@@ -2023,7 +2027,7 @@ function computeHvac(){
 // values needing confirmation (PLACEHOLDER entries come pre-flagged).
 // Overrides + flags persist with the save payload and the defaults baseline.
 // ============================================================================
-const SOLAR = { panelW:595, qty:3, bifacialPct:0 };   // HD Hyundai HiN-T595NI: 595 W STC, N-type TOPCon BIFACIAL (80±10% bifaciality),
+const SOLAR = { panelW:595, qty:3, bifacialPct:0, panelLIn:89.7, panelWIn:44.7 };   // HD Hyundai HiN-T595NI: 595 W STC, N-type TOPCon BIFACIAL (80±10% bifaciality),
                                                       // −0.30%/°C, NOCT 44°C, 89.7×44.7″ (27.9 ft² ea → 3 ≈ 93% of the 90 ft² roof).
                                                       // Flush-mounted → rear-side gain ≈ 0; bifacialPct is the tested gap-gain lever.
 const ASSUME_REG=[];
@@ -2039,8 +2043,10 @@ const ASSUME_REG=[];
   add('rpi.steel','Films & assembly R','Steel R per inch','R/in','physics',0,()=>STEEL_RPI,v=>STEEL_RPI=v);
   Object.keys(INS_RPI).filter(k=>k!=='none').forEach(k=>
     add('ins.'+k,'Insulation R per inch',INS_LBL[k],'R/in','datasheet',0,()=>INS_RPI[k],v=>INS_RPI[k]=v));
-  add('occ.total','Thermal loads','Person heat — total (cooling)','W','ASHRAE seated',0,()=>OCC_W.total,v=>OCC_W.total=v);
-  add('occ.sens','Thermal loads','Person heat — sensible (heating credit)','W','ASHRAE seated',0,()=>OCC_W.sensible,v=>OCC_W.sensible=v);
+  add('occ.total','Thermal loads','Adult heat — total (cooling)','W','ASHRAE seated',0,()=>OCC_W.total,v=>OCC_W.total=v);
+  add('occ.sens','Thermal loads','Adult heat — sensible (heating credit)','W','ASHRAE seated',0,()=>OCC_W.sensible,v=>OCC_W.sensible=v);
+  add('occ.childFrac','Thermal loads','Child heat fraction of adult','×','estimate',1,()=>OCC_CHILD_FRAC,v=>OCC_CHILD_FRAC=v,
+      'Children emit less heat than adults (mass/metabolism); 0.7 is a reasonable estimate — refine if occupant gains ever matter to a certification.');
   add('pv.shadeUp','Thermal loads','Sol-air residual under PV panels','°F','ESTIMATE',1,()=>PV_SHADE_UP,v=>PV_SHADE_UP=v,
       'Test: thermocouple/IR on the membrane under a panel vs exposed membrane, clear summer day — enter the avg uplift.');
   Object.keys(ROOF_SOLAIR).forEach(k=>
@@ -2055,6 +2061,8 @@ const ASSUME_REG=[];
       '','https://www.solarelectricsupply.com/hd-hyundai-hin-t595ni-bifacial-solar-panel',
       '595 W STC front-side, 0/+5 W positive tolerance, −0.30%/°C, NOCT 44°C (open-rack — flush mount runs hotter). Ignore reseller “659 W PTC” claims — that is the BSTC bifacial-boost figure.');
   add('sol.qty','Solar array (components)','Panel quantity','#','design',0,()=>SOLAR.qty,v=>SOLAR.qty=v);
+  add('sol.dimL','Solar array (components)','Panel length','in','Hyundai datasheet',0,()=>SOLAR.panelLIn,v=>SOLAR.panelLIn=v,'', 'https://www.solarelectricsupply.com/hd-hyundai-hin-t595ni-bifacial-solar-panel');
+  add('sol.dimW','Solar array (components)','Panel width','in','Hyundai datasheet',0,()=>SOLAR.panelWIn,v=>SOLAR.panelWIn=v,'', 'https://www.solarelectricsupply.com/hd-hyundai-hin-t595ni-bifacial-solar-panel');
   add('sol.bifacial','Solar array (components)','Bifacial rear-side gain','%','flush mount ≈ 0 — GAP TEST',1,()=>SOLAR.bifacialPct,v=>SOLAR.bifacialPct=v,
       'Gap test planned. Published curve (high-albedo roof): flush ≈0%; 4–6″ ≈2–5%; 12″ ≈5–8%; 24″ ≈8–12%, saturating there. CAVEAT: 93% coverage + NO overhang → rear mostly sees its own shadow; expect ~1–4%, with the gap’s cell-cooling worth as much as the rear light. Full picture: ℹ popup. Enter the measured %.',
       'https://iea-pvps.org/wp-content/uploads/2021/04/IEA-PVPS-T13-14_2021-Bifacial-Photovoltaic-Modules-and-Systems-report.pdf');
@@ -2075,6 +2083,18 @@ const ASSUME_REG=[];
   add('cop.wave3','HVAC COP curve','Portable (Wave-3) curve derate','×','Charlie ESTIMATE',1,()=>WAVE3_FACTOR,v=>WAVE3_FACTOR=v,
       'Confirm against the actual unit’s published COP / measured draw. Heating curve below −13°F is EXTRAPOLATED — real capacity collapses in deep cold (resistance floor COP 1 applies, but capacity shortfall is not modeled).');
 })();
+// how each flagged unknown gets closed: test data / drawings / vendor data / reference data / decision
+(function(){const v={'pv.shadeUp':'test','sol.bifacial':'test','sol.derate':'test','test.ach':'test','test.windowU':'vendor data','cop.wave3':'vendor data','occ.childFrac':'reference data'};
+  ASSUME_REG.forEach(a=>{ if(v[a.id])a.via=v[a.id]; else if(a.id.indexOf('clim.')===0)a.via='reference data'; else a.via='test'; });})();
+// non-numeric unknowns tracked alongside the flags — same checklist, no value to edit here
+const TRACKED_UNKNOWNS=[
+  {lbl:'Steel member takeoff (real counts)', via:'drawings', note:'Replace the placeholder member schedule on the Envelope tab with counts/lengths from the structural drawings — the single biggest Uo uncertainty; everything downstream inherits it.'},
+  {lbl:'Floor / belly construction & chassis bridging', via:'drawings', note:'Likely the worst thermal path in the envelope; needs the real belly build-up to model beyond the current first pass.'},
+  {lbl:'Wall cladding colour', via:'decision', note:'Sol-air wall uplift currently assumes “Light”. Pick the real cladding on the Thermal tab and this closes itself.'},
+  {lbl:'HVAC unit selection + real COP/capacity tables', via:'vendor data (Lucas)', note:'Replace Charlie’s generic curves; model deep-cold capacity collapse, not just COP.'},
+  {lbl:'Panel standoff gap', via:'test + decision', note:'Gap test → measured bifacial % + cooling benefit → pick a mounting height (4–6″ likely sweet spot).'},
+  {lbl:'HVAC equipment path: listed unit vs custom heat exchanger', via:'decision + DAPIA', note:'Buying a listed (UL/CSA) unit keeps appliance certification on the vendor. Designing our own heat exchanger makes us an appliance manufacturer — NRTL listing (UL 1995 / 60335-2-40 class) required under HUD Subpart H before it can go in the home. Confirm the line with the DAPIA, esp. any custom tank-to-air loop.'},
+];
 let assumeFlags={}; ASSUME_REG.forEach(a=>{ if(a.ph) assumeFlags[a.id]=true; });
 let assumeNotes={};                     // per-entry flag-note overrides (default note = entry.tnote)
 let assumeUnlocked=false;
@@ -2083,13 +2103,15 @@ function assumeOverrides(){const o={};ASSUME_REG.forEach(a=>{const v=a.get();if(
 function applyAssume(o){if(!o)return;ASSUME_REG.forEach(a=>{const v=o[a.id];if(v!=null&&isFinite(+v))a.set(+v);});}
 function defaultAssumeFlags(){const o={};ASSUME_REG.forEach(a=>{if(a.ph)o[a.id]=true;});return o;}
 function assumeFlagCount(){return Object.keys(assumeFlags).filter(k=>assumeFlags[k]).length;}
+function viaChip(v){return `<span class="src-badge" style="font-weight:600;">${v||'test'}</span>`;}
 function updAssumeBtn(){
-  const n=assumeFlagCount();
-  setHTML('assume-flag-n', n?`⚑ ${n} to back with test data`:'');
+  const n=assumeFlagCount()+TRACKED_UNKNOWNS.length;
+  setHTML('assume-flag-n', n?`⚑ ${n} open`:'');
   const flagged=ASSUME_REG.filter(a=>assumeFlags[a.id]);
-  setHTML('assume-flag-list', flagged.length
-    ? flagged.map(a=>`⚑ <b>${a.lbl}</b> <span style="color:var(--color-text-tertiary);">(${a.grp}${assumeNote(a)?` — ${assumeNote(a)}`:''})</span>`).join('<br>')
-    : 'Nothing flagged — all assumptions confirmed.');
+  setHTML('assume-flag-list',
+    flagged.map(a=>`⚑ ${viaChip(a.via)} <b>${a.lbl}</b> <span style="color:var(--color-text-tertiary);">${assumeNote(a)?`— ${assumeNote(a)}`:`(${a.grp})`}</span>`)
+      .concat(TRACKED_UNKNOWNS.map(t=>`⚑ ${viaChip(t.via)} <b>${t.lbl}</b> <span style="color:var(--color-text-tertiary);">— ${t.note}</span>`))
+      .join('<br>') || 'Nothing open — all assumptions confirmed.');
 }
 function openAssumeModal(){const o=el('assume-overlay');if(!o)return;o.style.display='flex';
   el('assume-gate').style.display=assumeUnlocked?'none':'block';
@@ -2120,13 +2142,22 @@ function renderAssumeTable(){
     });
     h+=`</table>`;
   });
-  // bottom: the test/validation checklist
+  // bottom: the open-unknowns checklist — flagged values + tracked non-numeric unknowns, tagged by how each closes
   const flagged=ASSUME_REG.filter(a=>assumeFlags[a.id]);
-  h+=`<div class="stage-label">⚑ Needs test data / confirmation (${flagged.length})</div>`+
+  h+=`<div class="stage-label">⚑ Open unknowns (${flagged.length+TRACKED_UNKNOWNS.length}) — what closes each: test data · drawings · vendor data · reference data · decision</div>`+
      `<div class="footnote" style="line-height:1.8;">`+
-     (flagged.length?flagged.map(a=>`⚑ <b>${a.lbl}</b> — ${assumeNote(a)||'<i>add a flag note</i>'}`).join('<br>'):'Nothing flagged.')+
-     `<br><br><b>These values are assumptions until backed by test data.</b> Run the test, enter the measured value above, and unflag. Flagged items ride along with saves and the defaults baseline, so the list survives until each one is closed out.</div>`;
+     flagged.map(a=>`⚑ ${viaChip(a.via)} <b>${a.lbl}</b> — ${assumeNote(a)||'<i>add a flag note</i>'}`).join('<br>')+
+     (flagged.length&&TRACKED_UNKNOWNS.length?'<br>':'')+
+     TRACKED_UNKNOWNS.map(t=>`⚑ ${viaChip(t.via)} <b>${t.lbl}</b> — ${t.note}`).join('<br>')+
+     `<br><br><b>These are assumptions until closed.</b> Run the test / get the drawing / make the call, enter the value above, and unflag. `+
+     `<b>Scope note:</b> flags, notes and edits here live in THIS browser only — to make them team-wide defaults, use “Copy state for commit” and have them baked into the source.</div>`;
   host.innerHTML=h;
+}
+function copyAssumeState(){
+  const txt=JSON.stringify({assume:assumeOverrides(),assumeFlags,assumeNotes},null,2);
+  const done=()=>setStatus('Backend state copied — paste to Zach/Claude to bake into source','copy');
+  try{ navigator.clipboard.writeText(txt).then(done,()=>prompt('Copy this JSON:',txt)); }
+  catch(e){ prompt('Copy this JSON:',txt); }
 }
 function editAssumeNote(id,v){ assumeNotes[id]=v; updAssumeBtn(); save(); }
 
@@ -2225,7 +2256,8 @@ function thermalCase(ToutH,ToutC){
   const e=R.env, hud=S.envBasis==='hud';
   const perimFt=2*(ENV.EX_L+ENV.EX_W)/12;
   const volFt3=(e.intL*e.intW*e.intH)/1728;
-  const occ=R.occHead||0, plugW=internalGainW();
+  const occ=(S.adults||0)+(S.guests||0)+(S.children||0)*OCC_CHILD_FRAC;   // children ≈70% of adult heat (they ain't no torta, mass-wise)
+  const plugW=internalGainW();
   // --- heating: conduction + infiltration; certified number takes NO gain credit (§3280.510) ---
   const TinH=hud?70:S.indoorSetF;
   const dTh=Math.max(0,TinH-ToutH);
@@ -2239,7 +2271,7 @@ function thermalCase(ToutH,ToutC){
   // --- cooling: sol-air conduction + infiltration + window solar + internal gains + latent ---
   const TinC=hud?75:S.indoorSetF;
   const up=(ROOF_SOLAIR[S.roofColor]||ROOF_SOLAIR.white).up;
-  const pvCov=Math.min(100,Math.max(0,+S.pvRoofCoverPct||0))/100;   // PV-shaded share of roof: gets PV_SHADE_UP, not the colour uplift
+  const pvCov=Math.min(1,(SOLAR.qty*SOLAR.panelLIn*SOLAR.panelWIn)/(ENV.EX_L*ENV.EX_W));   // PV-shaded share FROM PANEL GEOMETRY (qty × L×W ÷ roof); shaded area gets PV_SHADE_UP, not the colour uplift
   const upRoof=(1-pvCov)*up + pvCov*PV_SHADE_UP;
   const upWall=(ROOF_SOLAIR[S.wallColor]||ROOF_SOLAIR.light).up*0.5;  // walls: own cladding colour, half uplift (orientation averaging)
   const cRoof=e.roofA*((ToutC+upRoof)-TinC)/e.Rroof;
@@ -2309,6 +2341,9 @@ function injectThermal(){
     field('Location (shared with Variables)',`<select onchange="updClimate(this.value)">`+
       Object.keys(CLIMATES).map(k=>opt(k,CLIMATES[k].lbl,S.climate)).join('')+opt('custom','Custom (use outdoor override)',S.climate)+`</select>`,
       'The SAME climate selection as the Variables tab — it drives solar PSH there and the design temperatures here. Austin/Minneapolis are Charlie’s NWS/ASHRAE data; Fairbanks/Temperate design temps are placeholders. Custom falls back to Minneapolis temps — steer with the outdoor override below.')+
+    field('Season (shared with Variables)',`<select onchange="updSeason(this.value)">`+
+      opt('winter','Winter — heating drives HVAC/Energy',S.season)+opt('shoulder','Spring / Fall — HVAC off',S.season)+opt('summer','Summer — cooling drives HVAC/Energy',S.season)+`</select>`,
+      'Both design cases below are always computed; season picks WHICH one feeds the HVAC electrical draw and the Energy/solar snapshot (PSH + daylight). Same setting as the Variables tab.')+
     field('Temperature basis',`<select onchange="updStr('tempBasis',this.value)">`+
       opt('design99','99% design extreme (sizing)',S.tempBasis)+opt('mean','Seasonal mean (typical energy)',S.tempBasis)+`</select>`,
       'Design extreme is the sizing/certificate case; seasonal mean approximates a typical day for energy estimates. Sizing cards always use the extremes regardless.'));
@@ -2327,6 +2362,7 @@ function renderThermal(){
   const W=btu=>btu*BTUH_W;
   const basisLbl=S.tempBasis==='mean'?'seasonal mean':'99% design';
   setHTML('th-climate-note',
+    `<b>${(CLIMATES[S.climate]||{}).short||'Custom'} — ${SEASONS[S.season]||S.season}</b> (${S.season==='winter'?'heating case drives HVAC/Energy':S.season==='summer'?'cooling case drives HVAC/Energy':'HVAC off'}). `+
     `Basis temps in use: heating <b>${f(uT(b.ToutH),0)}${uTu()}</b> out / ${f(uT(b.TinH),0)}${uTu()} in (ΔT ${f(uDT(b.dTh),0)}${uDTu()}) · cooling <b>${f(uT(b.ToutC),0)}${uTu()}</b> out / ${f(uT(b.TinC),0)}${uTu()} in`+
     ((+S.outdoorOvrF||0)!==0?' · <b>outdoor override active</b>':'')+
     ` · interior volume ${f(uF3(b.volFt3),0)} ${uF3u()} · perimeter ${f(uH(b.perimFt),1)} ${uHu()}.`);
@@ -2342,14 +2378,14 @@ function renderThermal(){
     mcard('Design cooling load'+helpIco('The cooling output needed on the design-hot day (the 1% summer extreme), holding the indoor setpoint against: conduction with sun-heated roof/walls (sol-air), solar through the glazing (SHGC), air leakage, heat from people + plugs, and the humidity (latent) share on top. This sizes the AC; ÷ COP gives the electrical draw.'),'W',f(W(sz.cool),0),`${btuSub(sz.cool)}@ ${f(uT(sz.ToutC),0)}${uTu()} · ${isM()?f(W(sz.cool)/1000,2)+' kW':f(t.coolTons,2)+' tons'}`,'hero')+
     mcard('At basis temp','W',f(W(b.cool),0),`${basisLbl} ${f(uT(b.ToutC),0)}${uTu()} · sens ${f(W(b.sens),0)} + lat ${f(W(b.lat),0)}`)+
     mcard('Window solar','W',f(W(b.solar),0),`SHGC ${f(S.windowSHGC,2)} × ${f(uFx(S.solarGlassBtu),0)} ${uFxu()}`)+
-    mcard('Internal gains','W',f(W(b.intern),0),`${b.occ} × ${OCC_W.total} W + ${f(b.plugW,0)} W plugs`)
+    mcard('Internal gains','W',f(W(b.intern),0),`${f(b.occ,1)} adult-eq × ${OCC_W.total} W + ${f(b.plugW,0)} W plugs`)
   );
   setHTML('th-solar-note',
-    `Effective roof sol-air uplift: <b>+${f(uDT(b.upRoof),1)}${uDTu()}</b> — ${f(b.pvCov*100,0)}% PV-shaded (+${f(uDT(PV_SHADE_UP),1)}${uDTu()} residual) + ${f((1-b.pvCov)*100,0)}% exposed ${ROOF_SOLAIR[S.roofColor]?ROOF_SOLAIR[S.roofColor].lbl.toLowerCase():'white'} (+${f(uDT((ROOF_SOLAIR[S.roofColor]||ROOF_SOLAIR.white).up),1)}${uDTu()}). `+
+    `Effective roof sol-air uplift: <b>+${f(uDT(b.upRoof),1)}${uDTu()}</b> — <b>${f(b.pvCov*100,0)}% PV-shaded</b> (computed from panel geometry: ${SOLAR.qty} × ${f(SOLAR.panelLIn,1)}″×${f(SOLAR.panelWIn,1)}″ ÷ the ${f(uA(ENV.EX_L*ENV.EX_W/144),0)} ${uAu()} roof; +${f(uDT(PV_SHADE_UP),1)}${uDTu()} residual) + ${f((1-b.pvCov)*100,0)}% exposed ${ROOF_SOLAIR[S.roofColor]?ROOF_SOLAIR[S.roofColor].lbl.toLowerCase():'white'} (+${f(uDT((ROOF_SOLAIR[S.roofColor]||ROOF_SOLAIR.white).up),1)}${uDTu()}). `+
     `Walls: <b>+${f(uDT(b.upWall),1)}${uDTu()}</b> (${ROOF_SOLAIR[S.wallColor]?ROOF_SOLAIR[S.wallColor].lbl.toLowerCase():'light'} cladding, half uplift for orientation). Window solar = SHGC × avg daytime sun × glazing area — SHGC and glazing area live on the Envelope tab. `+
     `<a style="cursor:pointer;color:var(--color-text-info);" onclick="openInfo('bifacial')"><i class="ti ti-info-circle"></i> bifacial gain &amp; gap height</a>`);
   setHTML('th-gains-note',
-    `People: <b>${b.occ}</b> (from Variables occupancy) × ${OCC_W.total} W total cooling / ${OCC_W.sensible} W sensible heating credit (ASHRAE seated). `+
+    `People: <b>${f(b.occ,1)} adult-equivalents</b> (adults + guests full, children × ${f(OCC_CHILD_FRAC,1)} — from Variables occupancy) × ${OCC_W.total} W total cooling / ${OCC_W.sensible} W sensible heating credit (ASHRAE seated adult). `+
     `Plug gains: <b>${f(b.plugW,0)} W</b> average, live from the Energy tab loads table (HVAC row excluded).`);
   // notice — headline numbers + what the basis means
   const nt=el('note-thermal');
@@ -3213,7 +3249,7 @@ function renderCompliance(){
 // there; the local file:// copy keeps its own separate memory.
 const STORAGE_KEY = 'uplift-water-planner-v3';   // v3: added fixture `auto` flag + reviewer fixes — discard stale state
 const APP_VERSION = 'v40';   // optional human label; the build stamp below is the source of truth
-const BUILD_STAMP = '2026-07-17 15:24 UTC (build 50)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
+const BUILD_STAMP = '2026-07-17 16:17 UTC (build 51)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
 let booted = false;
 function setStatus(msg,icon){ setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`); }
 function save(){
