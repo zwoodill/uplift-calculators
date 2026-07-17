@@ -3352,20 +3352,21 @@ function renderCompliance(){
 // ---- persistence: auto-save inputs to this browser, restore on load ----
 // Scoped per origin: the Confluence/GitHub-Pages version persists across reloads
 // there; the local file:// copy keeps its own separate memory.
-const STORAGE_KEY = 'uplift-water-planner-v3';   // v3: added fixture `auto` flag + reviewer fixes — discard stale state
+const STORAGE_KEY = 'uplift-water-planner-v4';   // v4: unified planner (envelope/thermal/HVAC/backend) — payload v:7
+const STORAGE_KEY_OLD = 'uplift-water-planner-v3';   // read-only fallback: migrate v3 saves forward on first load
 const APP_VERSION = 'v40';   // optional human label; the build stamp below is the source of truth
-const BUILD_STAMP = '2026-07-17 16:40 UTC (build 52)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
+const BUILD_STAMP = '2026-07-17 16:58 UTC (build 53)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
 let booted = false;
 function setStatus(msg,icon){ setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`); }
 function save(){
   try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({v:6, S, fixtures, showerHeads, pumpLibrary, activePump, pumpCurve, loads, framingRows, assume:assumeOverrides(), assumeFlags, assumeNotes, activeTab, hwTab, unitSys}));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({v:7, S, fixtures, showerHeads, pumpLibrary, activePump, pumpCurve, loads, framingRows, assume:assumeOverrides(), assumeFlags, assumeNotes, activeTab, hwTab, unitSys}));
     if(booted) setStatus('Auto-saved','check');
   }catch(e){ /* private mode / storage disabled — run without persistence */ }
 }
 function load(){
   try{
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_OLD);   // v3 saves migrate forward (v4 written on next save)
     if(!raw) return false;
     const d = JSON.parse(raw);
     if(d && d.S) Object.assign(S, d.S);
@@ -3404,7 +3405,7 @@ function resetDefaults(){
   updAssumeBtn();
   pumpBgImg   = null;
   if(DEFAULTS.unitSys) unitSys = DEFAULTS.unitSys;
-  try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+  try{ localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(STORAGE_KEY_OLD); }catch(e){}
   updUnitBtn();
   renderInputs();
   recalc();
@@ -3426,10 +3427,11 @@ const DEFAULTS = {
 };
 
 // admin-set default baseline (password-gated) overrides code defaults for this origin
-const DEFAULTS_KEY = 'uplift-water-planner-defaults-v3';   // bumped with the schema change
+const DEFAULTS_KEY = 'uplift-water-planner-defaults-v4';   // bumped with the v:7 schema
+const DEFAULTS_KEY_OLD = 'uplift-water-planner-defaults-v3';   // read-only fallback
 (function loadAdminDefaults(){
   try{
-    const raw=localStorage.getItem(DEFAULTS_KEY); if(!raw) return;
+    const raw=localStorage.getItem(DEFAULTS_KEY) || localStorage.getItem(DEFAULTS_KEY_OLD); if(!raw) return;
     const d=JSON.parse(raw);
     if(d.S) Object.assign(DEFAULTS.S, d.S);
     if(Array.isArray(d.fixtures)) DEFAULTS.fixtures=d.fixtures;
