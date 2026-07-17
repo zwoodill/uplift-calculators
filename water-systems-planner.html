@@ -288,7 +288,7 @@ svg{display:block;max-width:100%;height:auto;}
   <!-- assumptions backend: password-gated editor for placeholder / assumed constants -->
   <div id="assume-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;align-items:center;justify-content:center;padding:1rem;overflow:auto;">
     <div class="card" style="max-width:760px;width:100%;margin:0;max-height:92vh;overflow:auto;">
-      <div class="section-title"><i class="ti ti-flask"></i>Assumptions backend</div>
+      <div class="section-title"><i class="ti ti-flask"></i>Constants &amp; assumptions backend</div>
       <div id="assume-gate">
         <p style="font-size:12.5px;color:var(--color-text-secondary);margin:0 0 10px;line-height:1.6;">Enter the admin password to edit the <b>hardcoded physics &amp; reference constants</b> behind the calculators — air films, insulation R/inch, sol-air uplifts, occupant heat, climate design temps — and to flag values that still need confirmation.</p>
         <input type="password" id="as-pw-input" placeholder="Password" onkeyup="if(event.key==='Enter')unlockAssume()"
@@ -575,6 +575,12 @@ svg{display:block;max-width:100%;height:auto;}
     <div class="card">
       <div class="section-title"><i class="ti ti-snowflake"></i>Cooling — results</div>
       <div class="metric-grid" id="th-cool-cards"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-wind"></i>HVAC unit <span style="font-size:11px;font-weight:400;color:var(--color-text-secondary);">(shared with the Energy tab)</span></div>
+      <div id="th-hvac"></div>
+      <div class="footnote" id="th-hvac-note"></div>
     </div>
     <div class="notice" id="note-thermal"></div>
 
@@ -918,20 +924,20 @@ svg{display:block;max-width:100%;height:auto;}
       <div class="metric-grid" id="out-control" style="margin-top:12px;"></div>
     </div>
     <div class="card">
+      <div class="section-title"><i class="ti ti-wind"></i>HVAC <span style="font-size:11px;font-weight:400;color:var(--color-text-secondary);">(computed from the Thermal tab — Lucas's section)</span></div>
+      <div id="hvac-ctl"></div>
+      <div class="metric-grid" id="out-hvac"></div>
+      <div class="footnote" id="hvac-note"></div>
+    </div>
+    <div class="card">
       <div class="section-title"><i class="ti ti-plug"></i>Electrical loads <span style="font-size:11px;font-weight:400;color:var(--color-text-secondary);">(placeholder — refine with EE)</span></div>
       <div class="tblwrap"><table class="tbl" id="loads-table"></table></div>
       <div style="margin-top:8px;"><button class="btn" onclick="addLoad()">+ add load</button></div>
       <div class="footnote">W = draw when running · h/day = on-hours (or effective on-time for cycling loads like the fridge). These feed the battery total load and the profile below.</div>
     </div>
-    <div class="card" style="overflow-x:auto;">
-      <div class="section-title"><i class="ti ti-chart-area"></i>Daily energy profile <span style="font-size:11px;font-weight:400;color:var(--color-text-secondary);">(typical day)</span>
-        <span style="margin-left:auto;display:flex;gap:4px;align-items:center;">
-          <span style="font-size:11px;color:var(--color-text-tertiary);">zoom</span>
-          <button class="btn tiny" onclick="zoomEnergy(-1)" title="Zoom out">−</button>
-          <button class="btn tiny" onclick="zoomEnergy(1)" title="Zoom in — then scroll horizontally">+</button>
-        </span>
-      </div>
-      <div class="info-bar">Stacked load by category (bars, hourly W) vs solar generation (line). Where the solar line rises above the stack = surplus available to bank as hot water. Hover a column for its values; zoom in and scroll to inspect.</div>
+    <div class="card" id="energy-scroll" style="overflow-x:auto;">
+      <div class="section-title"><i class="ti ti-chart-area"></i>Daily energy profile <span style="font-size:11px;font-weight:400;color:var(--color-text-secondary);">(typical day)</span></div>
+      <div class="info-bar">Stacked load by category (bars, hourly W) vs solar generation (line). Where the solar line rises above the stack = surplus available to bank as hot water. Hover a column for its values. <a style="cursor:pointer;color:var(--color-text-info);" onclick="openInfo('profiles')"><i class="ti ti-info-circle"></i> how are hours assigned?</a></div>
       <div id="energy-chart" style="min-width:640px;"></div>
     </div>
   </section>
@@ -1014,6 +1020,7 @@ const S = {
   indoorSetF:72,                     // design-basis indoor setpoint (HUD basis pins 70°F heating / 75°F cooling)
   outdoorOvrF:0,                     // manual outdoor override °F for both cases (0 = auto from climate+basis)
   ach:0.5,                           // design-basis infiltration, air changes/hour (blower-door target)
+  hvacType:'wave3', copOverride:0,   // HVAC unit type (see HVAC_TYPES) + manual COP override (0 = use curve)
   latentPct:30,                      // cooling latent adder, % of sensible (~30% humid, ~15–20% dry)
   solarGlassBtu:30,                  // avg daytime solar flux on glazing, Btu/hr·ft² (orientation-averaged)
 };
@@ -1048,7 +1055,7 @@ let loads = [
   {name:'DC fridge',          w:55,   hrs:10,   cat:'fridge'},
   {name:'DC lights',          w:25,   hrs:5,    cat:'light'},
   {name:'DC plugs (misc)',    w:30,   hrs:6,    cat:'plug'},
-  {name:'HVAC / fan',         w:120,  hrs:6,    cat:'hvac'},
+  {name:'HVAC (computed)',    w:0,    hrs:24,   cat:'hvac', computed:true},   // auto-set each recalc: thermal load ÷ COP
   {name:'Cabin vent fan',     w:10,   hrs:12,   cat:'fan'},
   {name:'Toilet vent fan',    w:3,    hrs:24,   cat:'fan'},
 ];
@@ -1070,7 +1077,6 @@ let framingRows = [
 
 let activeTab = 'summary';
 let hwTab = 0;   // hot-water sub-tab index
-let energyZoom = 1;   // horizontal zoom for the daily energy chart
 let pumpGeom = null;  // pump-chart geometry, for the hover/drag probe
 let pumpBgImg = null; // datasheet image (dataURL) drawn behind the chart for tracing
 let pumpBgOpacity = 0.5;
@@ -1250,7 +1256,7 @@ const FIELDS = {
   ],
   'grp-th-solar':[
     ['pvRoofCoverPct','PV roof coverage','%',5,'Share of the roof shaded by standoff-mounted solar panels. Panels intercept the sun (some becomes electricity, the rest re-radiates above the roof), so the covered area gets only a small residual sol-air uplift (~+3°F) instead of the colour uplift. SN002 plan: ~90% covered, white membrane underneath.'],
-    ['solarGlassBtu','Avg daytime sun on glass','Btu/hr·ft²',5,'Average solar flux reaching the glazing during daylight, orientation-averaged. Multiplied by SHGC and glazing area for the cooling solar gain.'],
+    ['solarGlassBtu','Avg daytime sun on glass','Btu/hr·ft²',5,'Average solar flux reaching the glazing during daylight, orientation-averaged. Multiplied by SHGC and glazing area for the cooling solar gain.','sflux'],
   ],
   'grp-th-gains':[
     ['latentPct','Latent fraction (cooling)','%',5,'Humidity load as a share of sensible cooling — ~30% humid (Austin), ~15–20% dry climates.'],
@@ -1287,8 +1293,17 @@ function uH(ft){return isM()?ft*0.3048:ft;}              function uHi(d){return 
 function uL(inch){return isM()?inch*2.54:inch;}          function uLi(d){return isM()?d/2.54:d;}          // small length (in)
 function uRpl(rpi){return isM()?rpi/2.54:rpi;}           function uRpli(d){return isM()?d*2.54:d;}        // R per unit length
 function uA(ft2){return isM()?ft2*0.092903:ft2;}          function uAi(d){return isM()?d/0.092903:d;}     // area (ft²)
+function uDT(d){return isM()?d/1.8:d;}                    function uDTi(v){return isM()?v*1.8:v;}          // temp DIFFERENCE (Δ°F↔Δ°C: ÷1.8, no offset)
+function uF3(v){return isM()?v*0.0283168:v;}                                                               // volume ft³→m³
+function uR(r){return isM()?r/5.678:r;}                                                                    // thermal resistance R→RSI
+function uUo(u){return isM()?u*5.678:u;}                                                                   // U / Uo →W/m²·K
+function uUA(x){return isM()?x*0.52753:x;}                                                                 // UA Btu/hr·°F→W/K
+function uFx(x){return isM()?x*3.15459:x;}                function uFxi(v){return isM()?v/3.15459:v;}      // solar flux Btu/hr·ft²→W/m²
 // unit labels
 function uTu(){return isM()?'°C':'°F';}
+function uDTu(){return isM()?'°C':'°F';}   function uF3u(){return isM()?'m³':'ft³';}
+function uRu(){return isM()?'m²·K/W':'hr·ft²·°F/Btu';}   function uUou(){return isM()?'W/m²·K':'Btu/hr·ft²·°F';}
+function uUAu(){return isM()?'W/K':'Btu/hr·°F';}         function uFxu(){return isM()?'W/m²':'Btu/hr·ft²';}
 function uVu(){return isM()?'L':'gal';}
 function uFlu(){return isM()?'L/min':'GPM';}
 function uHu(){return isM()?'m':'ft';}
@@ -1311,6 +1326,7 @@ const DIM = {
   temp:{d:uT,i:uTi,u:uTu}, vol:{d:uV,i:uVi,u:uVu}, volL:{d:uVL,i:uVLi,u:uVu},
   flow:{d:uFl,i:uFli,u:uFlu}, head:{d:uH,i:uHi,u:uHu}, len:{d:uL,i:uLi,u:uLu},
   rpl:{d:uRpl,i:uRpli,u:uRplu}, area:{d:uA,i:uAi,u:uAu},
+  dtemp:{d:uDT,i:uDTi,u:uDTu}, sflux:{d:uFx,i:uFxi,u:uFxu},
 };
 function toggleUnits(){unitSys=isM()?'imperial':'metric';renderInputs();recalc();updUnitBtn();save();}
 function updUnitBtn(){const b=el('unit-toggle');if(b)b.innerHTML=`<i class="ti ti-arrows-exchange"></i> ${isM()?'Metric (SI)':'Imperial (US)'}`;}
@@ -1370,6 +1386,7 @@ function renderInputs(){
   }
   injectEnv();
   injectThermal();
+  injectHvac();
   renderFixtureTable();
   renderShowerHeadTable();
   renderPumpLib();
@@ -1426,13 +1443,14 @@ function renderLoadsTable(){
   const cats=Object.keys(LOAD_CATS).filter(k=>!['hotwater','standby','pump'].includes(k));
   let h=`<tr><th>Load</th><th>W</th><th>h/day</th><th>Wh/day</th><th>Category</th><th></th></tr>`;
   loads.forEach((ld,i)=>{
-    h+=`<tr>
-      <td class="name"><input type="text" value="${ld.name}" oninput="updLoad(${i},'name',this.value)"></td>
-      <td><input type="number" step="5" value="${ld.w}" oninput="updLoad(${i},'w',this.value)"></td>
-      <td><input type="number" step="0.25" value="${ld.hrs}" oninput="updLoad(${i},'hrs',this.value)"></td>
+    const lock=ld.cat==='hvac'&&ld.computed;   // HVAC row is computed from the Thermal tab — not hand-editable
+    h+=`<tr${lock?' title="Computed: thermal load ÷ COP — adjust on the Thermal tab / HVAC card, not here."':''}>
+      <td class="name"><input type="text" value="${ld.name}"${lock?' disabled':''} oninput="updLoad(${i},'name',this.value)"></td>
+      <td><input type="number" step="5" value="${ld.w}"${lock?' disabled':''} oninput="updLoad(${i},'w',this.value)"></td>
+      <td><input type="number" step="0.25" value="${ld.hrs}"${lock?' disabled':''} oninput="updLoad(${i},'hrs',this.value)"></td>
       <td>${f(ld.w*ld.hrs,0)}</td>
-      <td><select onchange="updLoad(${i},'cat',this.value)">${cats.map(k=>`<option value="${k}"${ld.cat===k?' selected':''}>${LOAD_CATS[k].label}</option>`).join('')}</select></td>
-      <td style="text-align:center"><button class="btn tiny" onclick="rmLoad(${i})">✕</button></td>
+      <td>${lock?'<span class="src-badge">computed</span>':`<select onchange="updLoad(${i},'cat',this.value)">${cats.map(k=>`<option value="${k}"${ld.cat===k?' selected':''}>${LOAD_CATS[k].label}</option>`).join('')}</select>`}</td>
+      <td style="text-align:center">${lock?'':`<button class="btn tiny" onclick="rmLoad(${i})">✕</button>`}</td>
     </tr>`;
   });
   h+=`<tr><td class="name"><b>Total</b></td><td></td><td></td><td><b>${f(houseLoadsWh(),0)}</b></td><td></td><td></td></tr>`;
@@ -1869,7 +1887,7 @@ function renderFramingTable(){
   host.innerHTML=h;
   const a=envAreas();
   const line=(lbl,steel,area)=>{const raw=steel/area*100, eff=Math.min(90,raw*S.framingK);
-    return `<b>${lbl}</b> ${f(steel,1)} ft² steel / ${f(area,0)} ft² → <b>${f(raw,1)}%</b> raw · <b>${f(eff,1)}%</b> steel fraction used (×K)`;};
+    return `<b>${lbl}</b> ${f(uA(steel),1)} ${uAu()} steel / ${f(uA(area),0)} ${uAu()} → <b>${f(raw,1)}%</b> raw · <b>${f(eff,1)}%</b> steel fraction used (×K)`;};
   setHTML('env-framing-sum',
     line('Walls:',steelFaceFt2('wall'),a.opaqueWall)+' &nbsp;·&nbsp; '+
     line('Roof:',steelFaceFt2('roof'),a.roofA)+' &nbsp;·&nbsp; '+
@@ -1897,12 +1915,12 @@ function renderEnvelope(){
   const zt=zoneTag(e.Uo), pass=e.targetOK;
   // metric cards
   setHTML('env-cards',
-    mcard('Wall R (eff)','hr·ft²·°F/Btu',f(e.Rwall,1),`${INS_LBL[S.wallCavMat]}${S.wallContIn>0?` + ${LEN(S.wallContIn,2)} cont.`:''}`,'hero') +
-    mcard('Roof R (eff)','',f(e.Rroof,1),`${INS_LBL[S.roofCavMat]}`) +
-    mcard('Floor R (eff)','',f(e.Rfloor,1),`${INS_LBL[S.floorCavMat]} · chassis bridge`) +
-    mcard('Window U','Btu/hr·ft²·°F',f(S.windowU,2),`R-${f(e.Rwin,1)} · SHGC ${f(S.windowSHGC,2)}`) +
-    mcard('UA','Btu/hr·°F',f(e.UA,1),'Σ Area ÷ R') +
-    mcard('Uo (overall)','Btu/hr·ft²·°F',f(e.Uo,3),`${zt} · ${e.b==='hud'?'HUD':'design'} basis`,'hero') +
+    mcard('Wall R (eff)',uRu(),f(uR(e.Rwall),isM()?2:1),`${INS_LBL[S.wallCavMat]}${S.wallContIn>0?` + ${LEN(S.wallContIn,2)} cont.`:''}`,'hero') +
+    mcard('Roof R (eff)','',f(uR(e.Rroof),isM()?2:1),`${INS_LBL[S.roofCavMat]}`) +
+    mcard('Floor R (eff)','',f(uR(e.Rfloor),isM()?2:1),`${INS_LBL[S.floorCavMat]} · chassis bridge`) +
+    mcard('Window U',uUou(),f(uUo(S.windowU),2),`R-${f(uR(e.Rwin),isM()?2:1)} · SHGC ${f(S.windowSHGC,2)}`) +
+    mcard('UA',uUAu(),f(uUA(e.UA),1),'Σ Area ÷ R') +
+    mcard('Uo (overall)',uUou(),f(uUo(e.Uo),3),`${zt} · ${e.b==='hud'?'HUD':'design'} basis`,'hero') +
     mcard('Interior floor',uAu(),f(uA(e.intFloorFt2),1),`${LEN(e.intL,1)} × ${LEN(e.intW,1)} · wall ${LEN(e.wallThk,2)}/side`) +
     mcard('Interior height',uLu(),f(uL(e.intH),1),'flat clg — slope/livability TBD')
   );
@@ -1921,11 +1939,11 @@ function renderEnvelope(){
       `<i>Member schedule is a placeholder until the real steel takeoff is entered. Roof/floor films &amp; chassis bridging are first-pass; the floor/outrigger path is likely the worst. Full method + reg links in “Method &amp; references” below.</i>`;
   }
   // assembly comparison — the 5 presets at the current basis
-  let ch=`<tr><th>Wall assembly</th><th>Wall R</th><th>Uo</th><th>Zone</th></tr>`;
+  let ch=`<tr><th>Wall assembly</th><th>Wall R (${uRu()})</th><th>Uo (${uUou()})</th><th>Zone</th></tr>`;
   ENV_PRESETS.forEach(p=>{
     const rw=wallRFor(p.cav,p.cont,e.b), uo=envUoWith(rw,e);
     const on=S.wallCavMat===p.cav && Math.abs(S.wallContIn-p.cont)<0.01;
-    ch+=`<tr${on?' style="font-weight:600;background:var(--color-background-secondary);"':''}><td class="name">${p.lbl}${on?' ←':''}</td><td>${f(rw,1)}</td><td>${f(uo,3)}</td><td>${zoneTag(uo)}</td></tr>`;
+    ch+=`<tr${on?' style="font-weight:600;background:var(--color-background-secondary);"':''}><td class="name">${p.lbl}${on?' ←':''}</td><td>${f(uR(rw),isM()?2:1)}</td><td>${f(uUo(uo),3)}</td><td>${zoneTag(uo)}</td></tr>`;
   });
   setHTML('env-compare',ch);
   // proportional wall cross-section (outside → inside)
@@ -1961,6 +1979,44 @@ const ROOF_SOLAIR = {                           // Charlie's Ref!H:J — absorpt
 let PV_SHADE_UP = 3;                            // residual sol-air uplift °F under standoff PV — ESTIMATE, editable via Assumptions backend
 const OCC_W = {total:117, sensible:70};         // W per person, ASHRAE seated: total (cooling load) / sensible (heating credit)
 
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ HVAC SECTION — Lucas: this is your block.                                 ║
+// ║ Everything HVAC lives here: COP curves, unit types, and the engine that   ║
+// ║ turns the Thermal tab's load into electrical watts on the Energy tab.     ║
+// ║ • Curve points & the Wave-3 factor are also editable live in the          ║
+// ║   Assumptions backend (Variables tab ▸ password 1776) — those runtime     ║
+// ║   edits persist per-browser; changes HERE change the shipped defaults.    ║
+// ║ • To add a unit: add a row to HVAC_TYPES + a branch in hvacCOP().         ║
+// ║ • Workflow: edit on a branch → push → open a PR → Zach approves & merges. ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+// COP curves (from Charlie's model, Ref!U:V and X:Y) — electrical W = thermal W ÷ COP(outdoor °F).
+// Piecewise-linear between points; extrapolated past the ends (flagged in the backend).
+const COP_HEAT=[[-13,1.5],[-5,1.7],[5,1.9],[17,2.3],[30,2.8],[47,3.4],[60,3.8]];   // [outdoor °F, COP]
+const COP_COOL=[[75,2.6],[85,2.2],[95,1.9],[105,1.6],[115,1.4]];                    // [outdoor °F, COP]
+let WAVE3_FACTOR=0.85;                                                              // portable-unit derate applied to the curve
+const HVAC_TYPES={wave3:'Portable heat pump (Wave-3 class)', minisplit:'Mini-split (rated curve)', resist:'Resistance heat (COP 1)'};
+
+// COP for the current unit type at an outdoor temp. Resistance floor: never below 1.
+function hvacCOP(mode,ToutF){
+  if(+S.copOverride>0) return +S.copOverride;                    // manual override wins (0 = auto)
+  if(S.hvacType==='resist') return 1;
+  const raw = mode==='cooling' ? interpPts(COP_COOL,ToutF) : interpPts(COP_HEAT,ToutF);
+  const k = S.hvacType==='wave3' ? WAVE3_FACTOR : 1;
+  return Math.max(1, raw*k);
+}
+// Season decides which design case drives the Energy tab: winter → heating
+// (OPERATING load — gains credited; the energy estimate, not the certificate),
+// summer → cooling (with latent), spring/fall → HVAC off.
+function computeHvac(){
+  const b=R.thermal.basis;
+  const mode = S.season==='winter' ? 'heating' : S.season==='summer' ? 'cooling' : 'off';
+  let thermalW=0, cop=1, Tout=null;
+  if(mode==='heating'){ Tout=b.ToutH; thermalW=b.heatOper*BTUH_W; cop=hvacCOP('heating',Tout); }
+  if(mode==='cooling'){ Tout=b.ToutC; thermalW=b.cool*BTUH_W;     cop=hvacCOP('cooling',Tout); }
+  return {mode, thermalW, cop, Tout, elecW: cop>0 ? thermalW/cop : 0};
+}
+// ── end HVAC section ─────────────────────────────────────────────────────────
+
 // ============================================================================
 // ASSUMPTIONS BACKEND — registry of every hardcoded placeholder/assumed
 // constant, editable via the password-gated Assumptions modal. ⚑ flags mark
@@ -1972,7 +2028,9 @@ const SOLAR = { panelW:595, qty:3, bifacialPct:0 };   // HD Hyundai HiN-T595NI: 
                                                       // Flush-mounted → rear-side gain ≈ 0; bifacialPct is the tested gap-gain lever.
 const ASSUME_REG=[];
 (function(){
-  const add=(id,grp,lbl,unit,src,ph,get,set,tnote,href)=>ASSUME_REG.push({id,grp,lbl,unit,src,ph:!!ph,get,set,def:get(),tnote:tnote||'',href:href||''});
+  // tnote = default FLAG NOTE (the test/source that will back the value — shows only when flagged);
+  // desc = spec details shown as a hover tooltip on the parameter name
+  const add=(id,grp,lbl,unit,src,ph,get,set,tnote,href,desc)=>ASSUME_REG.push({id,grp,lbl,unit,src,ph:!!ph,get,set,def:get(),tnote:tnote||'',href:href||'',desc:desc||''});
   add('film.wall','Films & assembly R','Air film — wall (int+ext)','R','ASHRAE',0,()=>FILM.wall,v=>FILM.wall=v);
   add('film.roof','Films & assembly R','Air film — roof','R','ASHRAE',0,()=>FILM.roof,v=>FILM.roof=v);
   add('film.floor','Films & assembly R','Air film — floor','R','ASHRAE',0,()=>FILM.floor,v=>FILM.floor=v);
@@ -1994,8 +2052,8 @@ const ASSUME_REG=[];
         ph?'Confirm against ASHRAE design-condition tables / NWS normals for the actual market.':''));});
   // solar array components — HD Hyundai HiN-T595NI (datasheet-confirmed); derate + bifacial gain to be backed by tests
   add('sol.panelW','Solar array (components)','Panel rated power (STC, front)','W','Hyundai HiN-T595NI datasheet',0,()=>SOLAR.panelW,v=>SOLAR.panelW=v,
-      '595 W STC front-side, 0/+5 W positive tolerance, −0.30%/°C, NOCT 44°C (open-rack — flush mount runs hotter). Ignore reseller “659 W PTC” claims — that is the BSTC bifacial-boost figure.',
-      'https://www.solarelectricsupply.com/hd-hyundai-hin-t595ni-bifacial-solar-panel');
+      '','https://www.solarelectricsupply.com/hd-hyundai-hin-t595ni-bifacial-solar-panel',
+      '595 W STC front-side, 0/+5 W positive tolerance, −0.30%/°C, NOCT 44°C (open-rack — flush mount runs hotter). Ignore reseller “659 W PTC” claims — that is the BSTC bifacial-boost figure.');
   add('sol.qty','Solar array (components)','Panel quantity','#','design',0,()=>SOLAR.qty,v=>SOLAR.qty=v);
   add('sol.bifacial','Solar array (components)','Bifacial rear-side gain','%','flush mount ≈ 0 — GAP TEST',1,()=>SOLAR.bifacialPct,v=>SOLAR.bifacialPct=v,
       'Gap test planned. Published curve (high-albedo roof): flush ≈0%; 4–6″ ≈2–5%; 12″ ≈5–8%; 24″ ≈8–12%, saturating there. CAVEAT: 93% coverage + NO overhang → rear mostly sees its own shadow; expect ~1–4%, with the gap’s cell-cooling worth as much as the rear light. Full picture: ℹ popup. Enter the measured %.',
@@ -2011,6 +2069,11 @@ const ASSUME_REG=[];
       'Read the NFRC 100 label / cert sheet of the actual glazing product (§3280.508(e)).');
   add('test.solarGlass','Design inputs to validate','Avg daytime sun on glass','Btu/hr·ft²','Charlie',0,()=>S.solarGlassBtu,v=>S.solarGlassBtu=v);
   add('test.latent','Design inputs to validate','Latent fraction (cooling)','%','Charlie',0,()=>S.latentPct,v=>S.latentPct=v);
+  // HVAC COP curve points (electrical = thermal ÷ COP at outdoor temp)
+  COP_HEAT.forEach((p,i)=>add(`cop.heat.${i}`,'HVAC COP curve','Heating COP @ '+p[0]+'°F','COP','Charlie Ref',0,()=>COP_HEAT[i][1],v=>COP_HEAT[i][1]=v));
+  COP_COOL.forEach((p,i)=>add(`cop.cool.${i}`,'HVAC COP curve','Cooling COP @ '+p[0]+'°F','COP','Charlie Ref',0,()=>COP_COOL[i][1],v=>COP_COOL[i][1]=v));
+  add('cop.wave3','HVAC COP curve','Portable (Wave-3) curve derate','×','Charlie ESTIMATE',1,()=>WAVE3_FACTOR,v=>WAVE3_FACTOR=v,
+      'Confirm against the actual unit’s published COP / measured draw. Heating curve below −13°F is EXTRAPOLATED — real capacity collapses in deep cold (resistance floor COP 1 applies, but capacity shortfall is not modeled).');
 })();
 let assumeFlags={}; ASSUME_REG.forEach(a=>{ if(a.ph) assumeFlags[a.id]=true; });
 let assumeNotes={};                     // per-entry flag-note overrides (default note = entry.tnote)
@@ -2043,11 +2106,12 @@ function renderAssumeTable(){
   let h='';
   groups.forEach(g=>{
     h+=`<div class="stage-label">${g}</div><table class="tbl" style="margin-bottom:4px;">`+
-       `<tr><th title="Checked = this value is an assumption that still needs test data or source confirmation. Unchecked = trusted (published / datasheet / decided). Check any value you start doubting." style="font-size:10px;line-height:1.2;">⚑ needs<br>test?</th><th style="text-align:left;">Parameter</th><th>Value</th><th>Unit</th><th>Source</th></tr>`;
+       `<tr><th title="Click to toggle. ⚑ NEEDS TEST = an assumption awaiting test data / confirmation (rolls up to the checklist below). ✓ trusted = published table, datasheet, or a made decision. Flip any value you start doubting.">Status</th><th style="text-align:left;">Parameter</th><th>Value</th><th>Unit</th><th>Source</th></tr>`;
     byGrp[g].forEach(a=>{
       const mod=Math.abs(a.get()-a.def)>1e-9;
-      h+=`<tr><td><input type="checkbox"${assumeFlags[a.id]?' checked':''} onchange="toggleAssumeFlag('${a.id}',this.checked)"></td>`+
-        `<td>${a.lbl}${a.info?` <i class="ti ti-info-circle help" style="cursor:pointer;color:var(--color-text-info);" title="open explainer" onclick="openInfo('${a.info}')"></i>`:''}${mod?` <b style="color:var(--color-text-info);" title="edited — shipped default ${a.def}">●</b>`:''}</td>`+
+      h+=`<tr><td><span class="src-badge${assumeFlags[a.id]?' ph':''}" style="cursor:pointer;user-select:none;" title="${assumeFlags[a.id]?'assumption — click when confirmed by test/source':'trusted — click if this needs testing after all'}" `+
+        `onclick="toggleAssumeFlag('${a.id}',${assumeFlags[a.id]?'false':'true'});renderAssumeTable();">${assumeFlags[a.id]?'⚑ NEEDS TEST':'✓ trusted'}</span></td>`+
+        `<td${a.desc?` title="${a.desc.replace(/"/g,'&quot;')}"`:''}>${a.lbl}${a.desc?' <i class="ti ti-help-circle help"></i>':''}${a.info?` <i class="ti ti-info-circle help" style="cursor:pointer;color:var(--color-text-info);" title="open explainer" onclick="openInfo('${a.info}')"></i>`:''}${mod?` <b style="color:var(--color-text-info);" title="edited — shipped default ${a.def}">●</b>`:''}</td>`+
         `<td><input type="number" step="any" value="${a.get()}" style="width:84px;" onchange="editAssume('${a.id}',this.value)" title="shipped default: ${a.def}"></td>`+
         `<td>${a.unit}</td><td>${a.href?`<a href="${a.href}" target="_blank" rel="noopener" style="text-decoration:none;" title="open source">`:''}<span class="src-badge${a.ph?' ph':''}">${a.src}${a.href?' ↗':''}</span>${a.href?'</a>':''}</td></tr>`;
       if(assumeFlags[a.id])
@@ -2100,8 +2164,52 @@ const INFO_POPUPS = {
       <a href="https://www.solarelectricsupply.com/hd-hyundai-hin-t595ni-bifacial-solar-panel" target="_blank" rel="noopener">HiN-T595NI spec</a></div>
     </div>`,
   },
+  profiles: {
+    title:'<i class="ti ti-chart-area"></i>Daily energy profile — how hours are assigned',
+    html(){
+      return `<div class="reflist">
+        <div class="refblock"><b>What is real vs illustrative.</b> The <b>daily totals</b> (Wh/day per category) are the real
+        model — they come from the Energy loads table, the Hot Water tab's reheat + standby numbers, and the pump energy.
+        The <b>hour-by-hour shapes</b> are hardcoded placeholder patterns that just smear each category's daily total across
+        the day so the solar-overlap picture is plausible. They are not measurements and not schedules you've set.</div>
+        <div class="refblock"><b>The four shapes</b> (normalized so each sums to its category's daily Wh):
+        <br>· <b>meals</b> — hours 6, 7, 12, 17, 18, 19 full weight, 8 at 40%, 20 at 60% → used by <b>hot-water reheat</b>,
+        <b>pump</b>, and <b>cooking</b>. This is why you see hot-water ramps at breakfast / lunch / dinner — the model assumes
+        draws cluster around meals &amp; showers, then the tank reheats right after.
+        <br>· <b>flat</b> — even 24 h → fridge, tank standby, HVAC, vent fans.
+        <br>· <b>evening</b> — 6 h + 18–22 h → lights.
+        <br>· <b>daytime</b> — 8–21 h → DC plugs.
+        <br>Solar is a half-cosine over the daylight window (${climDayH(S.climate,S.season)} h for the current location/season).</div>
+        <div class="refblock" style="margin-bottom:0;"><b>Known refinements (not yet modeled):</b> hot water should follow the
+        actual shower schedule from the Hot Water tab rather than generic meal hours; HVAC should follow outdoor temperature
+        through the day (cold nights = more heat) rather than flat; and the thermal-battery control logic already shifts real
+        reheat into solar hours — the chart doesn't show that shift yet. If an hourly picture starts driving decisions
+        (battery cycling, inverter sizing), these shapes need to graduate from placeholders. Until then, trust the daily
+        totals and treat the intraday pattern as a sketch.</div>
+      </div>`;
+    },
+  },
+  loads: {
+    title:'<i class="ti ti-plug"></i>Total daily load — breakdown',
+    html(){
+      const hw=R.heatEnergyWh||0, sb=R.standbyWhDay||0, pump=Math.max(0,(R.waterWhDay||0)-hw-sb);
+      const rows=[
+        {n:'Hot water — reheat', wh:hw, note:'daily draw reheated to setpoint (Hot Water tab)'},
+        {n:'Hot water — tank standby', wh:sb, note:'jacket losses holding temperature'},
+        {n:'Water pump', wh:pump, note:'pressurization energy (Water tab)'},
+        ...loads.map(l=>({n:l.name+(l.cat==='hvac'&&l.computed?'':''), wh:(+l.w||0)*(+l.hrs||0),
+          note:l.cat==='hvac'&&l.computed?'computed: thermal load ÷ COP (Energy tab)':`${f(l.w,0)} W × ${f(l.hrs,1)} h — ${(LOAD_CATS[l.cat]||{}).label||l.cat}`})),
+      ].filter(r=>r.wh>0.5).sort((a,b)=>b.wh-a.wh);
+      const tot=rows.reduce((s,r)=>s+r.wh,0);
+      let h=`<div class="tblwrap"><table class="tbl" style="width:100%;"><tr><th style="text-align:left;">Load</th><th>Wh/day</th><th>%</th><th style="text-align:left;">What it is</th></tr>`;
+      rows.forEach(r=>{h+=`<tr><td class="name" style="text-align:left;">${r.n}</td><td style="text-align:right;">${f(r.wh,0)}</td><td style="text-align:right;">${f(r.wh/tot*100,0)}%</td><td style="text-align:left;font-size:11px;color:var(--color-text-secondary);">${r.note}</td></tr>`;});
+      h+=`<tr style="font-weight:600;border-top:1.5px solid var(--color-border-secondary);"><td style="text-align:left;">TOTAL</td><td style="text-align:right;">${f(tot,0)}</td><td style="text-align:right;">100%</td><td style="text-align:left;">${f(tot/1000,2)} kWh/day · solar covers ${f(R.solarCoverPct||0,0)}%</td></tr></table></div>`+
+        `<div class="footnote" style="margin-top:8px;">Live snapshot — edit plug loads on the Energy tab, hot-water drivers on the Hot Water tab, HVAC via Thermal + the Energy HVAC card. Season (${SEASONS[S.season]||S.season}) sets which HVAC mode is running.</div>`;
+      return h;
+    },
+  },
 };
-function openInfo(key){const p=INFO_POPUPS[key];if(!p)return;setHTML('info-title',p.title);setHTML('info-body',p.html);const o=el('info-overlay');if(o)o.style.display='flex';}
+function openInfo(key){const p=INFO_POPUPS[key];if(!p)return;setHTML('info-title',p.title);setHTML('info-body',typeof p.html==='function'?p.html():p.html);const o=el('info-overlay');if(o)o.style.display='flex';}
 function closeInfo(){const o=el('info-overlay');if(o)o.style.display='none';}
 function editAssume(id,val){const a=ASSUME_REG.find(x=>x.id===id);if(!a)return;const v=parseFloat(val);if(!isFinite(v))return;
   a.set(v); syncClimatePSH(); renderInputs(); recalc(); save(); renderAssumeTable();}
@@ -2156,6 +2264,43 @@ function computeThermal(){
   return {cl,basis,sizing,coolTons:sizing.cool/12000};
 }
 
+// HVAC card on the Energy tab (unit type select + COP override) — part of the HVAC section
+function injectHvac(){
+  const opt=(v,l,cur)=>`<option value="${v}"${String(cur)===String(v)?' selected':''}>${l}</option>`;
+  const field=(lbl,inner,help)=>`<div class="field"><div class="field-lbl">${lbl}${help?` <i class="ti ti-help-circle help" title="${help}"></i>`:''}</div><div class="field-input">${inner}</div></div>`;
+  const unitSel=field('Unit type',`<select onchange="updStr('hvacType',this.value)">`+Object.keys(HVAC_TYPES).map(k=>opt(k,HVAC_TYPES[k],S.hvacType)).join('')+`</select>`,
+      'Sets the COP curve: portable (Wave-3 class) = curve × 0.85; mini-split = rated curve; resistance = COP 1 flat. Curve points are editable in the Assumptions backend. Same setting as the Energy tab.');
+  setHTML('hvac-ctl',
+    unitSel+
+    field('COP override (0 = auto)',`<input type="number" step="0.1" min="0" value="${S.copOverride}" oninput="upd('copOverride',this.value)">`,
+      'Force a specific COP instead of the curve — e.g. a datasheet value at your design temp. 0 uses the curve for the current unit type.'));
+  setHTML('th-hvac', unitSel);   // same control, same state, on the Thermal tab
+}
+function renderHvac(){
+  const hv=R.hvac; if(!hv) return;
+  const off=hv.mode==='off';
+  // raw curve value (pre-floor) so we can SAY when the resistance floor is clamping all unit types together
+  const k=S.hvacType==='wave3'?WAVE3_FACTOR:1;
+  const rawCop=off?null:(hv.mode==='cooling'?interpPts(COP_COOL,hv.Tout):interpPts(COP_HEAT,hv.Tout))*k;
+  const floored=!off && !(+S.copOverride>0) && S.hvacType!=='resist' && rawCop<1;
+  const coldLbl=`${f(uT(-13),0)}${uTu()}`;
+  setHTML('out-hvac',
+    mcard('Season mode','',off?'OFF':hv.mode,`${SEASONS[S.season]||S.season} (set on Variables)`)+
+    mcard('Thermal load','W',f(hv.thermalW,0),off?'spring/fall — negligible':`${hv.mode==='heating'?'operating heat (gains credited)':'total cooling (w/ latent)'} @ ${f(uT(hv.Tout),0)}${uTu()}`)+
+    mcard('COP used','',off?'—':f(hv.cop,2),(+S.copOverride>0)?'manual override'
+      :floored?`⚠ resistance floor — curve gives ${f(rawCop,2)} @ ${f(uT(hv.Tout),0)}${uTu()}`
+      :`${HVAC_TYPES[S.hvacType]||S.hvacType}`)+
+    mcard('Electrical draw','W',f(hv.elecW,0),`${f(hv.elecW*24/1000,2)} kWh/day · feeds loads table`,'hero'));
+  setHTML('hvac-note',
+    off?'Spring/fall: HVAC modeled off. Switch Season on the Variables tab to winter or summer to see the design cases.'
+       :(floored?`<b>⚠ It is so cold at this design temp that unit type doesn't matter:</b> the COP curve gives ${f(rawCop,2)} — below 1 — so every heat-pump option is clamped to the resistance floor (COP 1) and all types compute the same draw. Real units may not run at all here; this is the case for resistance backup sizing. `:'')+
+        `Electrical = thermal ÷ COP, run 24 h (the unit cycles; the load is continuous). ${hv.mode==='heating'?`Heating uses the <b>operating</b> load (internal gains credited) — the certificate number on the Thermal tab is higher by design. Deep-cold caveat: below ${coldLbl} the COP curve is extrapolated and real capacity collapses — capacity shortfall is not modeled.`:'Cooling includes the latent adder.'} Temperature basis (${S.tempBasis==='mean'?'seasonal mean — typical day':'99% design extreme — worst day'}) is set on the Thermal tab.`);
+  // compact readout under the Thermal tab's copy of the unit selector
+  setHTML('th-hvac-note',
+    off?`Season is <b>${SEASONS[S.season]||S.season}</b> — HVAC modeled off. Electrical details live on the Energy tab.`
+       :`At the current basis: <b>${hv.mode}</b> ${f(hv.thermalW,0)} W thermal ÷ COP <b>${f(hv.cop,2)}</b>${floored?' (⚠ resistance floor)':''} = <b>${f(hv.elecW,0)} W</b> → ${f(hv.elecW*24/1000,2)} kWh/day into the Energy loads table. COP override + full details on the Energy tab.`);
+}
+
 // thermal-tab selects (climate preset, temperature basis, roof colour) — called from renderInputs like injectEnv
 function injectThermal(){
   const opt=(v,l,cur)=>`<option value="${v}"${String(cur)===String(v)?' selected':''}>${l}</option>`;
@@ -2169,10 +2314,10 @@ function injectThermal(){
       'Design extreme is the sizing/certificate case; seasonal mean approximates a typical day for energy estimates. Sizing cards always use the extremes regardless.'));
   setHTML('th-solar',
     field('Exposed roof colour (sol-air)',`<select onchange="updStr('roofColor',this.value)">`+
-      Object.keys(ROOF_SOLAIR).map(k=>opt(k,`${ROOF_SOLAIR[k].lbl} — +${ROOF_SOLAIR[k].up}°F sol-air`,S.roofColor)).join('')+`</select>`,
+      Object.keys(ROOF_SOLAIR).map(k=>opt(k,`${ROOF_SOLAIR[k].lbl} — +${f(uDT(ROOF_SOLAIR[k].up),1)}${uDTu()} sol-air`,S.roofColor)).join('')+`</select>`,
       'Colour of the roof membrane where it is NOT shaded by solar panels. Darker surfaces absorb more sun and act hotter than the air; the uplift is a 24-h average added to the outdoor temp in the cooling case.')+
     field('Wall / cladding colour (sol-air)',`<select onchange="updStr('wallColor',this.value)">`+
-      Object.keys(ROOF_SOLAIR).map(k=>opt(k,`${ROOF_SOLAIR[k].lbl} — +${ROOF_SOLAIR[k].up/2}°F on walls`,S.wallColor)).join('')+`</select>`,
+      Object.keys(ROOF_SOLAIR).map(k=>opt(k,`${ROOF_SOLAIR[k].lbl} — +${f(uDT(ROOF_SOLAIR[k].up/2),1)}${uDTu()} on walls`,S.wallColor)).join('')+`</select>`,
       'Exterior cladding colour. Walls get HALF the colour uplift (orientation averaging — only some walls face the sun at a time). Was slaved to roof colour in Charlie’s model; now independent since the roof is mostly PV-shaded.'));
 }
 
@@ -2182,24 +2327,26 @@ function renderThermal(){
   const W=btu=>btu*BTUH_W;
   const basisLbl=S.tempBasis==='mean'?'seasonal mean':'99% design';
   setHTML('th-climate-note',
-    `Basis temps in use: heating <b>${f(b.ToutH,0)}°F</b> out / ${f(b.TinH,0)}°F in (ΔT ${f(b.dTh,0)}°F) · cooling <b>${f(b.ToutC,0)}°F</b> out / ${f(b.TinC,0)}°F in`+
+    `Basis temps in use: heating <b>${f(uT(b.ToutH),0)}${uTu()}</b> out / ${f(uT(b.TinH),0)}${uTu()} in (ΔT ${f(uDT(b.dTh),0)}${uDTu()}) · cooling <b>${f(uT(b.ToutC),0)}${uTu()}</b> out / ${f(uT(b.TinC),0)}${uTu()} in`+
     ((+S.outdoorOvrF||0)!==0?' · <b>outdoor override active</b>':'')+
-    ` · interior volume ${f(b.volFt3,0)} ft³ · perimeter ${f(b.perimFt,0)} ft.`);
+    ` · interior volume ${f(uF3(b.volFt3),0)} ${uF3u()} · perimeter ${f(uH(b.perimFt),1)} ${uHu()}.`);
+  const helpIco=t=>` <i class="ti ti-help-circle help" title="${t}"></i>`;
+  const btuSub=v=>isM()?'':`${f(v,0)} Btu/hr · `;
   setHTML('th-heat-cards',
-    mcard('Design heating load','W',f(W(sz.heatCert),0),`${f(sz.heatCert,0)} Btu/hr @ ${f(sz.ToutH,0)}°F · no gain credit`,'hero')+
-    mcard('At basis temp','W',f(W(b.heatCert),0),`${basisLbl} ${f(b.ToutH,0)}°F · ΔT ${f(b.dTh,0)}°F`)+
+    mcard('Design heating load'+helpIco('The heater output needed to hold the indoor setpoint on the design-cold day (the 99% winter extreme — colder happens only ~1% of hours). Sized with NO credit for heat from people/plugs, per the HUD certificate rules — the furnace must cope with an empty, cold house. This is the sizing number; ÷ COP gives the electrical draw.'),'W',f(W(sz.heatCert),0),`${btuSub(sz.heatCert)}@ ${f(uT(sz.ToutH),0)}${uTu()} · no gain credit`,'hero')+
+    mcard('At basis temp','W',f(W(b.heatCert),0),`${basisLbl} ${f(uT(b.ToutH),0)}${uTu()} · ΔT ${f(uDT(b.dTh),0)}${uDTu()}`)+
     mcard('Operating (gains credited)','W',f(W(b.heatOper),0),`− ${f(b.occ*OCC_W.sensible+b.plugW,0)} W people + plugs`)+
-    mcard('Infiltration share','W',f(W(b.infH),0),hud?`HUD 0.7·T·perimeter (${f(b.perimFt,0)} ft)`:`${f(S.ach,2)} ACH · ${f(b.volFt3,0)} ft³`)
+    mcard('Infiltration share','W',f(W(b.infH),0),hud?`HUD 0.7·T·perimeter (${f(uH(b.perimFt),1)} ${uHu()})`:`${f(S.ach,2)} ACH · ${f(uF3(b.volFt3),0)} ${uF3u()}`)
   );
   setHTML('th-cool-cards',
-    mcard('Design cooling load','W',f(W(sz.cool),0),`${f(sz.cool,0)} Btu/hr @ ${f(sz.ToutC,0)}°F · ${f(t.coolTons,2)} tons`,'hero')+
-    mcard('At basis temp','W',f(W(b.cool),0),`${basisLbl} ${f(b.ToutC,0)}°F · sens ${f(W(b.sens),0)} + lat ${f(W(b.lat),0)}`)+
-    mcard('Window solar','W',f(W(b.solar),0),`SHGC ${f(S.windowSHGC,2)} × ${f(S.solarGlassBtu,0)} Btu/hr·ft²`)+
+    mcard('Design cooling load'+helpIco('The cooling output needed on the design-hot day (the 1% summer extreme), holding the indoor setpoint against: conduction with sun-heated roof/walls (sol-air), solar through the glazing (SHGC), air leakage, heat from people + plugs, and the humidity (latent) share on top. This sizes the AC; ÷ COP gives the electrical draw.'),'W',f(W(sz.cool),0),`${btuSub(sz.cool)}@ ${f(uT(sz.ToutC),0)}${uTu()} · ${isM()?f(W(sz.cool)/1000,2)+' kW':f(t.coolTons,2)+' tons'}`,'hero')+
+    mcard('At basis temp','W',f(W(b.cool),0),`${basisLbl} ${f(uT(b.ToutC),0)}${uTu()} · sens ${f(W(b.sens),0)} + lat ${f(W(b.lat),0)}`)+
+    mcard('Window solar','W',f(W(b.solar),0),`SHGC ${f(S.windowSHGC,2)} × ${f(uFx(S.solarGlassBtu),0)} ${uFxu()}`)+
     mcard('Internal gains','W',f(W(b.intern),0),`${b.occ} × ${OCC_W.total} W + ${f(b.plugW,0)} W plugs`)
   );
   setHTML('th-solar-note',
-    `Effective roof sol-air uplift: <b>+${f(b.upRoof,1)}°F</b> — ${f(b.pvCov*100,0)}% PV-shaded (+${PV_SHADE_UP}°F residual) + ${f((1-b.pvCov)*100,0)}% exposed ${ROOF_SOLAIR[S.roofColor]?ROOF_SOLAIR[S.roofColor].lbl.toLowerCase():'white'} (+${(ROOF_SOLAIR[S.roofColor]||ROOF_SOLAIR.white).up}°F). `+
-    `Walls: <b>+${f(b.upWall,1)}°F</b> (${ROOF_SOLAIR[S.wallColor]?ROOF_SOLAIR[S.wallColor].lbl.toLowerCase():'light'} cladding, half uplift for orientation). Window solar = SHGC × avg daytime sun × glazing area — SHGC and glazing area live on the Envelope tab. `+
+    `Effective roof sol-air uplift: <b>+${f(uDT(b.upRoof),1)}${uDTu()}</b> — ${f(b.pvCov*100,0)}% PV-shaded (+${f(uDT(PV_SHADE_UP),1)}${uDTu()} residual) + ${f((1-b.pvCov)*100,0)}% exposed ${ROOF_SOLAIR[S.roofColor]?ROOF_SOLAIR[S.roofColor].lbl.toLowerCase():'white'} (+${f(uDT((ROOF_SOLAIR[S.roofColor]||ROOF_SOLAIR.white).up),1)}${uDTu()}). `+
+    `Walls: <b>+${f(uDT(b.upWall),1)}${uDTu()}</b> (${ROOF_SOLAIR[S.wallColor]?ROOF_SOLAIR[S.wallColor].lbl.toLowerCase():'light'} cladding, half uplift for orientation). Window solar = SHGC × avg daytime sun × glazing area — SHGC and glazing area live on the Envelope tab. `+
     `<a style="cursor:pointer;color:var(--color-text-info);" onclick="openInfo('bifacial')"><i class="ti ti-info-circle"></i> bifacial gain &amp; gap height</a>`);
   setHTML('th-gains-note',
     `People: <b>${b.occ}</b> (from Variables occupancy) × ${OCC_W.total} W total cooling / ${OCC_W.sensible} W sensible heating credit (ASHRAE seated). `+
@@ -2216,11 +2363,13 @@ function renderThermal(){
           :`indoor ${f(S.indoorSetF,0)}&nbsp;°F, ASHRAE effective-R with steel bridging, ${f(S.ach,2)}&nbsp;ACH infiltration. `)+
       `Biggest heating drivers: <b>${comps[0][0]} ${f(W(comps[0][1]),0)} W</b>, then ${comps[1][0]} ${f(W(comps[1][1]),0)} W. `+
       `Expected operating heat (gains credited): <b>${f(W(b.heatOper),0)} W</b>. `+
-      `<i>The Energy tab still carries the flat 120 W HVAC placeholder — replaced by load ÷ COP in the next phase (P3).</i>`;
+      `<i>These loads drive the HVAC electrical draw on the Energy tab (load ÷ COP, season-selected).</i>`;
   }
-  // breakdown table (basis case)
-  const dash='<td>—</td>', cell=v=>`<td>${f(v,0)}</td><td>${f(v*BTUH_W,0)}</td>`;
-  let h=`<tr><th>Component</th><th>Heat Btu/hr</th><th>Heat W</th><th>Cool Btu/hr</th><th>Cool W</th></tr>`;
+  // breakdown table (basis case) — Btu/hr columns collapse away in metric
+  const dash=isM()?'<td>—</td>':'<td>—</td><td>—</td>';
+  const cell=v=>isM()?`<td>${f(v*BTUH_W,0)}</td>`:`<td>${f(v,0)}</td><td>${f(v*BTUH_W,0)}</td>`;
+  let h=isM()?`<tr><th>Component</th><th>Heat W</th><th>Cool W</th></tr>`
+             :`<tr><th>Component</th><th>Heat Btu/hr</th><th>Heat W</th><th>Cool Btu/hr</th><th>Cool W</th></tr>`;
   h+=`<tr><td class="name">Walls (conduction · sol-air +${f(b.upWall,1)}°F)</td>${cell(b.hWall)}${cell(b.cWall)}</tr>`;
   h+=`<tr><td class="name">Roof (conduction · sol-air +${f(b.upRoof,1)}°F eff, ${f(b.pvCov*100,0)}% PV-shaded)</td>${cell(b.hRoof)}${cell(b.cRoof)}</tr>`;
   h+=`<tr><td class="name">Floor (conduction)</td>${cell(b.hFloor)}${cell(b.cFloor)}</tr>`;
@@ -2251,6 +2400,17 @@ function recalc(){
   // ---------- THERMAL LOADS (heating/cooling design loads on the real envelope) ----------
   R.thermal = computeThermal();
   renderThermal();
+
+  // ---------- HVAC (thermal load ÷ COP → computed row in the Energy loads table) ----------
+  R.hvac = computeHvac();
+  {
+    const w=Math.round(R.hvac.elecW);
+    const nm='HVAC (computed — '+(R.hvac.mode==='off'?'off, spring/fall':R.hvac.mode)+')';
+    let hv=loads.find(l=>l.cat==='hvac');
+    if(!hv){ hv={name:nm,w:w,hrs:24,cat:'hvac',computed:true}; loads.push(hv); renderLoadsTable(); }
+    else if(hv.w!==w||hv.name!==nm){ hv.w=w; hv.hrs=24; hv.name=nm; hv.computed=true; renderLoadsTable(); }
+  }
+  renderHvac();
 
   // ---------- DEMAND ----------
   let totalFresh=0,hotDaily=0,greyDaily=0,autoFresh=0,autoGrey=0;
@@ -2445,7 +2605,7 @@ function recalc(){
   const meetsDays=daysAchieved>=S.powerDays;
   Object.assign(R,{totalLoadWh,installedWh,installedAh,usableWh,daysAchieved,reqModules,meetsDays,modules:S.battModules});
   setHTML('out-battery',
-    mcard('Total daily load','Wh/day',f(totalLoadWh,0),`water ${f(waterWhDay,0)} + house ${f(houseWh,0)}`) +
+    mcard('Total daily load','Wh/day',f(totalLoadWh,0),`water ${f(waterWhDay,0)} + house ${f(houseWh,0)} · <u>breakdown</u>`,null,"openInfo('loads')") +
     mcard('Installed pack','kWh',f(installedWh/1000,2),`${S.battModules}× V5° · ${f(installedAh,0)} Ah`) +
     mcard('Autonomy','days',f(daysAchieved,1),`target ${f(S.powerDays,1)} d (power)`) +
     mcard('Modules for target','×',reqModules,meetsDays?`✓ ${S.battModules} installed`:`✗ need ${reqModules}, have ${S.battModules}`) +
@@ -2506,11 +2666,11 @@ function recalc(){
     mcard('Hot water',uVu()+'/day',f(uV(R.hotDaily),1),`${isFinite(R.consecShowers)?f(R.consecShowers,1):'∞'} showers/tank`) +
     mcard('Grey water',uVu()+'/day',f(uV(R.greyDaily),1),`tank ${VOL(R.greyTank,0)}`) +
     mcard('Water energy','Wh/day',f(R.waterWhDay,0),`${f(R.balancePct,0)}% of budget`,'hero') +
-    mcard('Total load','Wh/day',f(R.totalLoadWh,0),'water + other') +
+    mcard('Total load','Wh/day',f(R.totalLoadWh,0),'water + house · <u>click for breakdown</u>',null,"openInfo('loads')") +
     mcard('Battery bank','kWh',f(R.installedWh/1000,2),`${R.modules}× Pytes V5° installed`,'hero') +
     mcard('Peak current','A DC',f(R.peakAmps,1),'heater + pump') +
     mcard('Solar makeup','%',f(R.solarCoverPct,0),`${climLabel()}`) +
-    mcard('Envelope Uo','Btu/hr·ft²·°F',f(R.env.Uo,3),`${zoneTag(R.env.Uo)} · vs Z${S.uoZone} ${R.env.targetOK?'✓':'✗'}`,'hero') +
+    mcard('Envelope Uo',uUou(),f(uUo(R.env.Uo),3),`${zoneTag(R.env.Uo)} · vs Z${S.uoZone} ${R.env.targetOK?'✓':'✗'}`,'hero') +
     mcard('Toilet liquid',uVu()+'/day',f(uV(R.liquidGalDay),2),S.toiletMode==='urine-sep'?'urine sep':'leachate')
   );
 
@@ -2548,8 +2708,8 @@ function recalc(){
   save();
 }
 
-function mcard(label,unit,val,sub,cls){
-  return `<div class="mcard${cls?' '+cls:''}"><div class="mcard-label">${label}</div>`+
+function mcard(label,unit,val,sub,cls,onclick){
+  return `<div class="mcard${cls?' '+cls:''}"${onclick?` onclick="${onclick}" style="cursor:pointer;" title="click for details"`:''}><div class="mcard-label">${label}</div>`+
     `<div class="mcard-val">${val} <span style="font-size:12px;color:var(--color-text-tertiary)">${unit}</span></div>`+
     (sub?`<div class="mcard-sub">${sub}</div>`:'')+`</div>`;
 }
@@ -2880,7 +3040,6 @@ function renderEnergy(){
   );
   renderEnergyChart();
 }
-function zoomEnergy(d){ energyZoom=Math.max(1,Math.min(5,energyZoom+d)); renderEnergyChart(); }
 function renderEnergyChart(){
   const host=el('energy-chart'); if(!host) return;
   const byCat=loadWhByCat();
@@ -2895,7 +3054,7 @@ function renderEnergyChart(){
   maxY=(maxY*1.1)||100;
   const W=720,H=310,PX=60,PB=30,PT=16,PR=14, bw=(W-PX-PR)/24;
   const X=h=>PX+h*bw, Y=v=>H-PB-(v/maxY)*(H-PB-PT);
-  let s=`<svg viewBox="0 0 ${W} ${H}" style="width:${100*energyZoom}%;min-width:${Math.round(640*energyZoom)}px;">`;
+  let s=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:640px;">`;
   // gridlines + right-aligned value labels
   for(let i=0;i<=4;i++){const gy=PT+i*(H-PB-PT)/4;
     s+=`<line x1="${PX}" y1="${gy}" x2="${W-PR}" y2="${gy}" stroke="var(--color-border-tertiary)" stroke-width="0.5"/>`+
@@ -2920,7 +3079,7 @@ function renderEnergyChart(){
   let leg='<div class="chart-legend">';
   order.forEach(k=>{leg+=`<span><span class="sw" style="background:${LOAD_CATS[k].color};"></span>${LOAD_CATS[k].label}</span>`;});
   leg+=`<span><span style="display:inline-block;width:16px;border-top:2.5px solid #f5b301;vertical-align:middle;margin-right:4px;"></span>Solar generation</span></div>`;
-  const cap=`<div class="footnote">Peak load <b>${Math.round(tot[peakH])} W</b> at ${peakH}:00 · peak solar <b>${Math.round(sol[peakSolH])} W</b> at ${peakSolH}:00 · hover any hour for its values · zoom ${energyZoom}×.</div>`;
+  const cap=`<div class="footnote">Peak load <b>${Math.round(tot[peakH])} W</b> at ${peakH}:00 · peak solar <b>${Math.round(sol[peakSolH])} W</b> at ${peakSolH}:00 · hover any hour for its values · <a style="cursor:pointer;color:var(--color-text-info);" onclick="openInfo('profiles')">hour shapes are placeholders ℹ</a></div>`;
   host.innerHTML=s+leg+cap;
 }
 
@@ -3053,8 +3212,8 @@ function renderCompliance(){
 // Scoped per origin: the Confluence/GitHub-Pages version persists across reloads
 // there; the local file:// copy keeps its own separate memory.
 const STORAGE_KEY = 'uplift-water-planner-v3';   // v3: added fixture `auto` flag + reviewer fixes — discard stale state
-const APP_VERSION = 'v39';   // optional human label; the build stamp below is the source of truth
-const BUILD_STAMP = '2026-07-16 19:29 UTC (build 49)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
+const APP_VERSION = 'v40';   // optional human label; the build stamp below is the source of truth
+const BUILD_STAMP = '2026-07-17 15:24 UTC (build 50)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
 let booted = false;
 function setStatus(msg,icon){ setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`); }
 function save(){
