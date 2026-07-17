@@ -379,6 +379,11 @@ svg{display:block;max-width:100%;height:auto;}
     </div>
 
     <div class="notice" id="note-power"></div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-target-arrow"></i>Decision cockpit <span style="font-size:11px;font-weight:400;color:var(--color-text-secondary);">(constraints · levers · unknowns)</span></div>
+      <div id="cockpit"></div>
+    </div>
     <div class="footnote" style="margin-top:4px;">Set shared inputs on the <b>Variables</b> tab; tune subsystem specifics on each tab.</div>
   </section>
 
@@ -585,6 +590,12 @@ svg{display:block;max-width:100%;height:auto;}
       <div class="section-title"><i class="ti ti-wind"></i>HVAC unit <span style="font-size:11px;font-weight:400;color:var(--color-text-secondary);">(shared with the Energy tab)</span></div>
       <div id="th-hvac"></div>
       <div class="footnote" id="th-hvac-note"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-calendar-stats"></i>Seasonal energy — degree-day estimate</div>
+      <div class="metric-grid" id="th-season-cards"></div>
+      <div class="footnote" id="th-season-note"></div>
     </div>
     <div class="notice" id="note-thermal"></div>
 
@@ -1110,11 +1121,12 @@ const TABS = [
 // bracket PSH values; their design temps are PLACEHOLDER estimates — confirm
 // against ASHRAE design-condition tables before certifying anything with them.
 // ============================================================================
+// hdd65/cdd65 = annual heating/cooling degree-days base 65°F — APPROX from NOAA normals, verify (flagged in backend)
 const CLIMATES = {
-  austin:   {lbl:'Sun Belt — Austin TX',                 short:'Austin TX',      heatF:28,  coolF:100, winMeanF:52, sumMeanF:84, winPSH:3.5, sumPSH:6.8, winDayH:10,  sumDayH:14},
-  msp:      {lbl:'Midwest — Minneapolis MN',             short:'Minneapolis MN', heatF:-16, coolF:91,  winMeanF:17, sumMeanF:74, winPSH:2.5, sumPSH:5.5, winDayH:9,   sumDayH:15.5},
-  temperate:{lbl:'Temperate — PNW (placeholder temps)',  short:'Temperate PNW',  heatF:26,  coolF:85,  winMeanF:41, sumMeanF:66, winPSH:1.5, sumPSH:5.5, winDayH:8.5, sumDayH:16},
-  ak:       {lbl:'Alaska — Fairbanks (placeholder temps)',short:'Fairbanks AK',  heatF:-41, coolF:78,  winMeanF:-8, sumMeanF:62, winPSH:0.7, sumPSH:5.0, winDayH:5,   sumDayH:19},
+  austin:   {lbl:'Sun Belt — Austin TX',                 short:'Austin TX',      heatF:28,  coolF:100, winMeanF:52, sumMeanF:84, winPSH:3.5, sumPSH:6.8, winDayH:10,  sumDayH:14,   hdd65:1600,  cdd65:3000},
+  msp:      {lbl:'Midwest — Minneapolis MN',             short:'Minneapolis MN', heatF:-16, coolF:91,  winMeanF:17, sumMeanF:74, winPSH:2.5, sumPSH:5.5, winDayH:9,   sumDayH:15.5, hdd65:7800,  cdd65:720},
+  temperate:{lbl:'Temperate — PNW (placeholder temps)',  short:'Temperate PNW',  heatF:26,  coolF:85,  winMeanF:41, sumMeanF:66, winPSH:1.5, sumPSH:5.5, winDayH:8.5, sumDayH:16,   hdd65:4700,  cdd65:220},
+  ak:       {lbl:'Alaska — Fairbanks (placeholder temps)',short:'Fairbanks AK',  heatF:-41, coolF:78,  winMeanF:-8, sumMeanF:62, winPSH:0.7, sumPSH:5.0, winDayH:5,   sumDayH:19,   hdd65:13700, cdd65:90},
 };
 const SEASONS = {winter:'winter', shoulder:'spring/fall', summer:'summer'};
 function climPSH(c,s){const k=CLIMATES[c]; if(!k) return null; return s==='summer'?k.sumPSH : s==='winter'?k.winPSH : Math.round((k.winPSH+k.sumPSH)/2*10)/10;}
@@ -2052,10 +2064,13 @@ const ASSUME_REG=[];
   Object.keys(ROOF_SOLAIR).forEach(k=>
     add('solair.'+k,'Sol-air uplift by colour',ROOF_SOLAIR[k].lbl,'°F','Charlie Ref',0,()=>ROOF_SOLAIR[k].up,v=>ROOF_SOLAIR[k].up=v));
   const CF=[['heatF','99% heating design','°F'],['coolF','1% cooling design','°F'],['winMeanF','Winter mean','°F'],['sumMeanF','Summer mean','°F'],
-            ['winPSH','Winter peak sun hours','h'],['sumPSH','Summer peak sun hours','h'],['winDayH','Winter daylight','h'],['sumDayH','Summer daylight','h']];
-  Object.keys(CLIMATES).forEach(c=>{const ph=(c==='ak'||c==='temperate');CF.forEach(([fld,l,u])=>
-    add(`clim.${c}.${fld}`,'Climate — '+CLIMATES[c].short,l,u,ph?'PLACEHOLDER':'Charlie / NWS-ASHRAE',ph,()=>CLIMATES[c][fld],v=>CLIMATES[c][fld]=v,
-        ph?'Confirm against ASHRAE design-condition tables / NWS normals for the actual market.':''));});
+            ['winPSH','Winter peak sun hours','h'],['sumPSH','Summer peak sun hours','h'],['winDayH','Winter daylight','h'],['sumDayH','Summer daylight','h'],
+            ['hdd65','Heating degree-days (base 65)','°F·day'],['cdd65','Cooling degree-days (base 65)','°F·day']];
+  Object.keys(CLIMATES).forEach(c=>{const ph=(c==='ak'||c==='temperate');CF.forEach(([fld,l,u])=>{
+    const isDD=(fld==='hdd65'||fld==='cdd65');   // degree-days are approx NOAA-normals from memory — flag ALL for verification
+    add(`clim.${c}.${fld}`,'Climate — '+CLIMATES[c].short,l,u,isDD?'NOAA normals APPROX':(ph?'PLACEHOLDER':'Charlie / NWS-ASHRAE'),(ph||isDD)?1:0,
+        ()=>CLIMATES[c][fld],v=>CLIMATES[c][fld]=v,
+        isDD?'Verify against NOAA 1991–2020 climate normals for the station.':(ph?'Confirm against ASHRAE design-condition tables / NWS normals for the actual market.':''));});});
   // solar array components — HD Hyundai HiN-T595NI (datasheet-confirmed); derate + bifacial gain to be backed by tests
   add('sol.panelW','Solar array (components)','Panel rated power (STC, front)','W','Hyundai HiN-T595NI datasheet',0,()=>SOLAR.panelW,v=>SOLAR.panelW=v,
       '','https://www.solarelectricsupply.com/hd-hyundai-hin-t595ni-bifacial-solar-panel',
@@ -2333,6 +2348,81 @@ function renderHvac(){
        :`At the current basis: <b>${hv.mode}</b> ${f(hv.thermalW,0)} W thermal ÷ COP <b>${f(hv.cop,2)}</b>${floored?' (⚠ resistance floor)':''} = <b>${f(hv.elecW,0)} W</b> → ${f(hv.elecW*24/1000,2)} kWh/day into the Energy loads table. COP override + full details on the Energy tab.`);
 }
 
+// ============================================================================
+// SEASONAL ENERGY (P4) — degree-day estimate of annual HVAC electricity.
+// Base-65°F degree-days already embed typical internal-gain credit (that's why
+// the base isn't 70). Heating: UAeff × HDD ÷ seasonal COP. Cooling: the same
+// conduction baseline scaled by the design-day inflation factor (solar + latent
+// + internal gains vs pure conduction), ÷ seasonal COP at the summer mean.
+// ============================================================================
+function computeSeasonal(){
+  const cl=CLIMATES[S.climate]||CLIMATES.msp, e=R.env, sz=R.thermal.sizing;
+  const UAinf=1.08*(S.ach*((e.intL*e.intW*e.intH)/1728)/60);        // infiltration conductance, Btu/hr·°F (ACH basis)
+  const UAeff=e.UA+UAinf;
+  const copH=hvacCOP('heating',cl.winMeanF), copC=hvacCOP('cooling',cl.sumMeanF);
+  // VARIABLE-BASE degree-days: the heating threshold is OUR envelope's balance point,
+  // Tb = setpoint − internal gains ÷ UAeff — not the generic base-65 typical-house assumption.
+  // HDD is rescaled from the base-65 data with a quadratic shape (uniform daily-mean model,
+  // anchored to the real HDD65): HDD(Tb) ≈ HDD65 × ((Tb−Twin)/(65−Twin))².
+  const Tb=S.indoorSetF - sz.gainsBtu/UAeff;                         // heating balance point, °F (envelope-driven)
+  const shape=Math.max(0,Math.min(1.2,Math.pow(Math.max(0,(Tb-cl.winMeanF))/Math.max(1,(65-cl.winMeanF)),2)));
+  const hddTb=(cl.hdd65||0)*shape;
+  const heatKwh=UAeff*hddTb*24/3412/copH;                            // kWh/yr electrical
+  const condDesign=Math.max(1,sz.cRoof+sz.cWall+sz.cFloor+sz.cWin+sz.cDoor+sz.infC);
+  const inflate=Math.max(1,sz.cool/condDesign);                      // solar+internal+latent already inflate cooling (base-65 kept there)
+  const coolKwh=UAeff*(cl.cdd65||0)*24/3412*inflate/copC;
+  return {UAinf,UAeff,copH,copC,heatKwh,coolKwh,inflate,Tb,shape,hddTb,hdd:cl.hdd65||0,cdd:cl.cdd65||0};
+}
+function renderSeasonal(){
+  const s=R.seasonal; if(!s) return;
+  const cl=CLIMATES[S.climate]||CLIMATES.msp;
+  setHTML('th-season-cards',
+    mcard('Heating / year','kWh',f(s.heatKwh,0),`${f(s.hddTb,0)} DD @ OUR base · COP ${f(s.copH,2)} @ winter mean`,'hero')+
+    mcard('Balance point'+` <i class="ti ti-help-circle help" title="The outdoor temperature below which THIS envelope needs heat: setpoint − internal gains ÷ UAeff. Above it, people + plug heat cover the losses. This is what makes the seasonal estimate envelope-driven — a tighter envelope pushes the balance point down and erases heating days entirely, which base-65 degree-days would miss."></i>`,uTu(),f(uT(s.Tb),1),`envelope-derived · HDD65 rescaled ×${f(s.shape,2)}`)+
+    mcard('Cooling / year','kWh',f(s.coolKwh,0),`${f(s.cdd,0)} CDD65 · ×${f(s.inflate,2)} solar/latent · COP ${f(s.copC,2)}`)+
+    mcard('HVAC total / year','kWh',f(s.heatKwh+s.coolKwh,0),`${(CLIMATES[S.climate]||{}).short||'Custom'} annual`,'hero'));
+  setHTML('th-season-note',
+    `<b>Envelope-driven, weather-integrated:</b> heat demand = UAeff <b>${f(s.UAeff,1)}</b> Btu/hr·°F (envelope ${f(R.env.UA,1)} + infiltration ${f(s.UAinf,1)} @ ${f(S.ach,2)} ACH) × degree-days below <b>this envelope's own balance point ${f(uT(s.Tb),1)}${uTu()}</b> ÷ seasonal COP. `+
+    `The climate data only supplies integrated outdoor temperature (HDD65, rescaled ×${f(s.shape,2)} to our base) — improve the envelope and both UAeff and the balance point move. `+
+    `Cooling keeps base-65 with the ×${f(s.inflate,2)} solar/latent inflation from the design-day ratio (balance-point treatment for cooling: future refinement). `+
+    `Degree-day values are approximate NOAA normals — ⚑ flagged in the backend. The design-day cards above are the WORST day run 24 h; this is the year.`);
+}
+
+// decision cockpit (Summary): constraints × design levers (live sensitivities) × open unknowns
+function withS(key,val,fn){
+  const old=S[key], envOld=R.env;
+  S[key]=val; R.env=computeEnv();
+  const out=fn(R.env, computeThermal());
+  S[key]=old; R.env=envOld;
+  return out;
+}
+function renderCockpit(){
+  const host=el('cockpit'); if(!host) return;
+  const e=R.env, sz=R.thermal.sizing, cap=UO_ZONE[Number(S.uoZone)];
+  // levers: perturb one input, report the delta on the number it moves most
+  const dUo=v=>`${v>0?'+':''}${f(uUo(v),3)}`;
+  const heatW=t=>t.sizing.heatCert*BTUH_W;
+  const lev=[];
+  lev.push(['+¼″ continuous board (interior)', withS('wallContIn',S.wallContIn+0.25,(en,t)=>`Uo ${dUo(en.Uo-e.Uo)} · heat ${f(heatW(t)-sz.heatCert*BTUH_W,0)} W`), 'Envelope']);
+  lev.push(['Blower-door tightening (0.5→0.35 ACH)', withS('ach',0.35,(en,t)=>`heat ${f(heatW(t)-sz.heatCert*BTUH_W,0)} W · (design basis only)`), 'Thermal']);
+  lev.push(['Better glazing (U −0.05)', withS('windowU',Math.max(0.05,S.windowU-0.05),(en,t)=>`Uo ${dUo(en.Uo-e.Uo)} · heat ${f(heatW(t)-sz.heatCert*BTUH_W,0)} W`), 'Envelope']);
+  const copNow=R.hvac.cop, copAlt=(function(){const o=S.hvacType;S.hvacType=(o==='minisplit'?'wave3':'minisplit');const c=R.hvac.mode==='off'?copNow:hvacCOP(R.hvac.mode,R.hvac.Tout);S.hvacType=o;return c;})();
+  if(R.hvac.mode!=='off') lev.push([`HVAC swap (${S.hvacType==='minisplit'?'→ portable':'→ mini-split'})`, `COP ${f(copNow,2)} → ${f(copAlt,2)} · ${f(R.hvac.thermalW/copAlt-R.hvac.elecW,0)} W`, 'Energy']);
+  lev.push(['PV standoff gap (+5% bifacial, if test confirms)', `+${f(SOLAR.panelW*SOLAR.qty*0.05*S.solarPSH*(S.solarDerate/100)/1000,2)} kWh/day solar`, 'Test']);
+  const consRow=(ok,txt)=>`<div class="comp-row"><i class="ti ti-${ok===null?'point':ok?'circle-check':'alert-triangle'}" style="color:${ok===null?'var(--color-text-tertiary)':ok?'var(--color-text-success)':'var(--color-text-warning)'}"></i><span>${txt}</span></div>`;
+  const openN=assumeFlagCount()+TRACKED_UNKNOWNS.length;
+  host.innerHTML=
+    `<div class="stage-label" style="margin-top:0;">Constraints (the corners)</div>`+
+    consRow(e.targetOK,`<b>HUD Uo ≤ ${f(uUo(cap),3)} ${uUou()}</b> (Zone ${S.uoZone}) — currently <b>${f(uUo(e.Uo),3)}</b> ${e.targetOK?'✓ passes':'✗ over by '+f(uUo(e.Uo-cap),3)}`)+
+    consRow(null,`Exterior box fixed 144×90×99″ → interior <b>${f(uA(e.intFloorFt2),1)} ${uAu()}</b> floor · wall build-up is the only mover`)+
+    consRow(null,`Roof ${f(uA(90),0)} ${uAu()} → ${SOLAR.qty}× HiN-T595NI = <b>${f(S.solarW,0)} W</b> array, ${f(R.thermal.basis.pvCov*100,0)}% coverage — no room for more panels`)+
+    consRow(R.meetsDays,`Battery ${S.battModules}× V5° vs ${f(S.powerDays,1)}-day autonomy — ${R.meetsDays?'meets ✓':'needs '+R.reqModules+' modules'}`)+
+    `<div class="stage-label">Design levers (live sensitivity — change one thing, this is what moves)</div>`+
+    lev.map(([n,d,tab])=>`<div class="comp-row"><span class="src-badge">${tab}</span><span><b>${n}</b> → ${d}</span></div>`).join('')+
+    `<div class="stage-label">Open unknowns (${openN})</div>`+
+    `<div class="footnote">${assumeFlagCount()} flagged values + ${TRACKED_UNKNOWNS.length} tracked items — full list & flag notes in the Variables tab backend dropdown. Top of the list: steel member takeoff (drawings), blower-door ACH (test), HVAC unit selection (Lucas / vendor data).</div>`;
+}
+
 // thermal-tab selects (climate preset, temperature basis, roof colour) — called from renderInputs like injectEnv
 function injectThermal(){
   const opt=(v,l,cur)=>`<option value="${v}"${String(cur)===String(v)?' selected':''}>${l}</option>`;
@@ -2447,6 +2537,10 @@ function recalc(){
     else if(hv.w!==w||hv.name!==nm){ hv.w=w; hv.hrs=24; hv.name=nm; hv.computed=true; renderLoadsTable(); }
   }
   renderHvac();
+
+  // ---------- SEASONAL ENERGY (degree-day annual estimate) ----------
+  R.seasonal = computeSeasonal();
+  renderSeasonal();
 
   // ---------- DEMAND ----------
   let totalFresh=0,hotDaily=0,greyDaily=0,autoFresh=0,autoGrey=0;
@@ -2707,8 +2801,10 @@ function recalc(){
     mcard('Peak current','A DC',f(R.peakAmps,1),'heater + pump') +
     mcard('Solar makeup','%',f(R.solarCoverPct,0),`${climLabel()}`) +
     mcard('Envelope Uo',uUou(),f(uUo(R.env.Uo),3),`${zoneTag(R.env.Uo)} · vs Z${S.uoZone} ${R.env.targetOK?'✓':'✗'}`,'hero') +
+    mcard('HVAC / year','kWh',f(R.seasonal.heatKwh+R.seasonal.coolKwh,0),`degree-day est · heat ${f(R.seasonal.heatKwh,0)} + cool ${f(R.seasonal.coolKwh,0)}`) +
     mcard('Toilet liquid',uVu()+'/day',f(uV(R.liquidGalDay),2),S.toiletMode==='urine-sep'?'urine sep':'leachate')
   );
+  renderCockpit();
 
   // ---------- META ----------
   const occStr=`${R.occHead} people`+(S.children?` · ${f(R.occEq,1)} water-eq`:'');
@@ -3126,9 +3222,9 @@ function renderEnergyChart(){
 function renderDiagram(){
   const host=el('dep-svg'); if(!host) return;
   const LW=300, GAP=18, NX=14, NW=LW-2*NX, LT=26;
-  const W=5*LW+4*GAP, H=610, CH0=444;
-  const lanes=['1 · WATER DEMAND','2 · HOT WATER','3 · PUMP','4 · POWER + BATTERY','5 · TOILET'];
-  const laneH=[430,430,430,430,220];
+  const W=6*LW+5*GAP, H=610, CH0=444;
+  const lanes=['1 · WATER DEMAND','2 · HOT WATER','3 · PUMP','4 · ENVELOPE + HVAC','5 · POWER + BATTERY','6 · TOILET'];
+  const laneH=[430,430,430,430,430,220];
   const lx=i=>i*(LW+GAP);
   const nodes={}; let body=''; let busI=0;
   function node(id,lane,y,h,lines,type){
@@ -3194,21 +3290,30 @@ function renderDiagram(){
   node('p_op',2,258,40,[`op pt ${FLOW(R.opQ,2)} @ ${HEAD(R.opH,0)}`,`${f(R.pumpRuntimeMin,0)} min/d → ${f(R.pumpWhDay,0)} Wh/d`],'calc');
   node('p_fl',2,316,40, pOK?[`meets duty + peak flow ✓`,`shower & hose covered`]:[`${R.opDead?'no flow (static)':(!R.canMeetPeak?'head short':'peak flow short')} ✗`,`FLAG: pump undersized`], pOK?'key':'flag');
   vEdge('p_in','p_rh');vEdge('p_rh','p_hy');vEdge('p_hy','p_el');vEdge('p_el','p_op');vEdge('p_op','p_fl');
-  // lane 4: power
+  // lane 4: envelope + thermal + HVAC (Uo chain feeding power)
+  const eOK=R.env.targetOK, hvOff=R.hvac.mode==='off';
+  node('e_in',3,36,54,[`IN: ${INS_LBL[S.wallCavMat]}`,`cont ${LEN(S.wallContIn,2)} · ${(CLIMATES[S.climate]||{}).short||'custom'}`,`${SEASONS[S.season]||S.season} · ${S.tempBasis==='mean'?'mean':'99%'} basis`],'in');
+  node('e_uo',3,108,40,[`Uo ${f(R.env.Uo,3)} vs Z${S.uoZone} cap`,eOK?`zone ✓`:`FLAG: over cap`],eOK?'key':'flag');
+  node('e_ld',3,166,40,[`design heat ${f(R.thermal.sizing.heatCert*BTUH_W,0)} W`,`design cool ${f(R.thermal.sizing.cool*BTUH_W,0)} W`],'calc');
+  node('e_hv',3,224,40,hvOff?[`HVAC off (spring/fall)`,`0 W`]:[`HVAC ${R.hvac.mode} ÷ COP ${f(R.hvac.cop,2)}`,`= ${f(R.hvac.elecW,0)} W · 24 h`],'key');
+  node('e_dd',3,282,40,[`year: heat ${f(R.seasonal.heatKwh,0)} kWh`,`cool ${f(R.seasonal.coolKwh,0)} kWh (DD est)`],'calc');
+  vEdge('e_in','e_uo');vEdge('e_uo','e_ld');vEdge('e_ld','e_hv');vEdge('e_hv','e_dd');
+  // lane 5: power
   const bOK=R.waterWhDay<=S.budgetWh, dOK=R.meetsDays;
-  node('w_in',3,36,54,[`IN: ${S.busVoltage} V · budget ${f(S.budgetWh,0)} Wh`,`house loads ${f(houseLoadsWh(),0)} Wh`,`${S.battModules}× V5° · DoD ${S.batteryDoDPct}% · eff ${S.systemEffPct}%`],'in');
-  node('w_ww',3,108,40,[`waterWh = ${f(R.waterWhDay,0)} Wh/d`,`${f(R.balancePct,0)}% of budget ${bOK?'✓':'✗ OVER'}`],bOK?'key':'flag');
-  node('w_tl',3,166,28,[`totalLoad = ${f(R.totalLoadWh,0)} Wh/d`],'calc');
-  node('w_us',3,212,28,[`usable = ${f(R.usableWh/1000,2)} kWh`],'calc');
-  node('w_da',3,258,40,[`autonomy ${f(R.daysAchieved,1)} d vs ${f(S.powerDays,1)} d`,dOK?`meets target ✓`:`FLAG: need ${R.reqModules} modules`],dOK?'key':'flag');
-  node('w_pa',3,316,28,[`peakAmps = ${f(R.peakAmps,1)} A DC`],'calc');
+  node('w_in',4,36,54,[`IN: ${S.busVoltage} V · budget ${f(S.budgetWh,0)} Wh`,`house loads ${f(houseLoadsWh(),0)} Wh`,`${S.battModules}× V5° · DoD ${S.batteryDoDPct}% · eff ${S.systemEffPct}%`],'in');
+  node('w_ww',4,108,40,[`waterWh = ${f(R.waterWhDay,0)} Wh/d`,`${f(R.balancePct,0)}% of budget ${bOK?'✓':'✗ OVER'}`],bOK?'key':'flag');
+  node('w_tl',4,166,28,[`totalLoad = ${f(R.totalLoadWh,0)} Wh/d`],'calc');
+  node('w_us',4,212,28,[`usable = ${f(R.usableWh/1000,2)} kWh`],'calc');
+  node('w_da',4,258,40,[`autonomy ${f(R.daysAchieved,1)} d vs ${f(S.powerDays,1)} d`,dOK?`meets target ✓`:`FLAG: need ${R.reqModules} modules`],dOK?'key':'flag');
+  node('w_pa',4,316,28,[`peakAmps = ${f(R.peakAmps,1)} A DC`],'calc');
   vEdge('w_in','w_ww');vEdge('w_ww','w_tl');vEdge('w_tl','w_us');vEdge('w_us','w_da');vEdge('w_da','w_pa');
-  // lane 5: toilet
-  node('t_in',4,36,42,[`IN: ${VOLL(S.urineLppd,1)}/p·d`,`empty ${S.toiletEmptyDays} d · ${S.toiletMode==='urine-sep'?'urine-sep':'leachate '+S.leachateFrac+'%'}`],'in');
-  node('t_lq',4,96,28,[`liquid = ${VOL(R.liquidGalDay,2)}/d`],'calc');
-  node('t_ct',4,142,28,[`container = ${VOL(R.containerGal,1)}`],'key');
+  // lane 6: toilet
+  node('t_in',5,36,42,[`IN: ${VOLL(S.urineLppd,1)}/p·d`,`empty ${S.toiletEmptyDays} d · ${S.toiletMode==='urine-sep'?'urine-sep':'leachate '+S.leachateFrac+'%'}`],'in');
+  node('t_lq',5,96,28,[`liquid = ${VOL(R.liquidGalDay,2)}/d`],'calc');
+  node('t_ct',5,142,28,[`container = ${VOL(R.containerGal,1)}`],'key');
   vEdge('t_in','t_lq');vEdge('t_lq','t_ct');
   // cross-lane hand-offs (orange)
+  xEdge('e_hv','w_tl','HVAC Wh');
   xEdge('d_hd','h_he','hot gal/d');
   xEdge('d_pk','p_rh','peak flow',8);
   xEdge('d_fr','p_op','gal/d → runtime',18);
@@ -3222,7 +3327,7 @@ function renderDiagram(){
     <marker id="dgArr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7 Z" fill="var(--color-border-primary)"/></marker>
     <marker id="dgArrO" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7 Z" fill="#d79b00"/></marker>
   </defs>`;
-  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Live calculation dependency graph" style="width:100%;min-width:900px;">${defs}${body}</svg>`;
+  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Live calculation dependency graph" style="width:100%;min-width:1080px;">${defs}${body}</svg>`;
 }
 
 // ---- HUD 24 CFR Part 3280 Subpart G compliance panel ----
@@ -3249,7 +3354,7 @@ function renderCompliance(){
 // there; the local file:// copy keeps its own separate memory.
 const STORAGE_KEY = 'uplift-water-planner-v3';   // v3: added fixture `auto` flag + reviewer fixes — discard stale state
 const APP_VERSION = 'v40';   // optional human label; the build stamp below is the source of truth
-const BUILD_STAMP = '2026-07-17 16:17 UTC (build 51)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
+const BUILD_STAMP = '2026-07-17 16:40 UTC (build 52)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
 let booted = false;
 function setStatus(msg,icon){ setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`); }
 function save(){
