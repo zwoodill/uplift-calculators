@@ -1848,6 +1848,37 @@ function envUoWith(Rwall,e){
 }
 function zoneTag(Uo){return Uo<=UO_ZONE[3]?'Zone 1–3':Uo<=UO_ZONE[2]?'Zone 1–2':Uo<=UO_ZONE[1]?'Zone 1':'fails all';}
 
+// ---- FRAGILE-PASS assessment: a Uo under the cap isn't a clean pass if a modest, LIKELY
+// increase in the (placeholder) steel takeoff would flip it. Returns the wall steel fraction
+// at which Uo hits the zone cap (bisection), the current fraction, and a state.
+const STEEL_HEADROOM_PTS = 0.03;   // <3 percentage-pts of wall-steel headroom ⇒ "fragile"
+function uoFragility(){
+  const e=R.env; if(!e) return null;
+  const cap=UO_ZONE[Number(S.uoZone)], Uo=e.Uo;
+  const pass=Uo<=cap, marginRel=(cap-Uo)/cap;                       // + = under the cap
+  const takeoffFlagged = S.framingMode==='takeoff' && S.envBasis!=='hud';
+  let fracNow=null, fracCrit=null, headroom=null;
+  if(takeoffFlagged){
+    const a=envAreas();
+    const series=FILM.wall+S.sheathIn*MISC_RPI.wood+S.wallContIn*(INS_RPI[S.wallContMat]||0)+S.panelIn*MISC_RPI.pvc;
+    const cav=Math.max((INS_RPI[S.wallCavMat]||0)*S.studDepthIn,0.91);
+    const uoAt=fr=>envUoWith(series+framedEffR_frac(cav,fr,S.framingK),e);   // Uo as wall steel fraction varies
+    fracNow=steelFaceFt2('wall')/a.opaqueWall;
+    // bisect for the fraction where Uo == cap (monotonic increasing in steel)
+    let lo=0.001, hi=0.80;
+    if(uoAt(lo)>cap) fracCrit=lo;                 // fails even bare-framed (other surfaces already over)
+    else if(uoAt(hi)<cap) fracCrit=hi;            // never fails in range
+    else { for(let i=0;i<44;i++){const m=(lo+hi)/2; if(uoAt(m)<cap)lo=m; else hi=m;} fracCrit=(lo+hi)/2; }
+    headroom=fracCrit-fracNow;                    // percentage-points of steel we can still absorb
+  }
+  // state: fail | fragile | solid
+  let state='solid';
+  if(!pass) state='fail';
+  else if(takeoffFlagged ? (headroom<STEEL_HEADROOM_PTS) : (marginRel<0.10)) state='fragile';
+  return {cap,Uo,pass,marginRel,state,takeoffFlagged,fracNow,fracCrit,headroom};
+}
+function fragBadge(fr){return fr.state==='fail'?'✗ FAIL':fr.state==='fragile'?'⚠ FRAGILE PASS':'✓ solid pass';}
+
 // inject envelope selects/presets into the Envelope pane (called from renderInputs, like toilet/solar)
 function injectEnv(){
   const opt=(v,l,cur)=>`<option value="${v}"${String(cur)===String(v)?' selected':''}>${l}</option>`;
@@ -1942,8 +1973,15 @@ function renderEnvelope(){
   // zone pass/fail notice
   const nz=el('note-envelope');
   if(nz){
-    nz.className='notice '+(pass?'teal':'amber');
-    nz.innerHTML=`<div class="notice-title"><i class="ti ti-${pass?'circle-check':'alert-triangle'}"></i>Uo ${f(e.Uo,3)} — ${pass?`meets Zone ${S.uoZone}`:`over Zone ${S.uoZone} cap (${f(UO_ZONE[Number(S.uoZone)],3)})`}</div>`+
+    const fr=uoFragility();
+    nz.className='notice '+(fr.state==='solid'?'teal':'amber');   // fragile & fail both amber — a pass this close isn't "green"
+    const hdr = fr.state==='fail' ? `Uo ${f(e.Uo,3)} — over Zone ${S.uoZone} cap (${f(UO_ZONE[Number(S.uoZone)],3)})`
+      : fr.state==='fragile' ? `Uo ${f(e.Uo,3)} — ⚠ FRAGILE pass of Zone ${S.uoZone}`
+      : `Uo ${f(e.Uo,3)} — meets Zone ${S.uoZone}`;
+    nz.innerHTML=`<div class="notice-title"><i class="ti ti-${fr.state==='solid'?'circle-check':'alert-triangle'}"></i>${hdr}</div>`+
+      (fr.takeoffFlagged && fr.state!=='fail'
+        ? `<b>${fr.state==='fragile'?'This pass is fragile.':'Margin:'}</b> holds up to <b>${f(fr.fracCrit*100,1)}%</b> wall-steel face fraction before Uo crosses the cap; the current <b>placeholder</b> takeoff is <b>${f(fr.fracNow*100,1)}%</b> → only <b>${f(fr.headroom*100,1)} pts</b> of headroom. A real welded frame (typically 13–18%) likely exceeds that — confirm with the structural takeoff (DAPIA Q3/Q4) and lean on continuous board for margin. `
+        : (fr.state==='fragile'?`<b>Thin margin</b> — only ${f(fr.marginRel*100,0)}% under the cap. `:''))+
       `Overall heat-transmission coefficient <b>Uo = ${f(e.Uo,3)}</b> Btu/hr·ft²·°F (${f(e.Uo*5.678,3)} W/m²·K), computed on the <b>${e.b==='hud'?'HUD §3280.509(b) framing-fraction':'design (ASHRAE 90.1 App A eff-R)'}</b> basis. `+
       `Passes: ${e.zonePass[1]?'Z1 ✓':'Z1 ✗'} · ${e.zonePass[2]?'Z2 ✓':'Z2 ✗'} · ${e.zonePass[3]?'Z3 ✓':'Z3 ✗'} (caps 0.116 / 0.096 / 0.079 — <a href="https://www.law.cornell.edu/cfr/text/24/3280.506" target="_blank" rel="noopener" style="color:inherit;">§3280.506</a>). `+
       (e.b==='hud'
@@ -2413,7 +2451,12 @@ function renderCockpit(){
   const openN=assumeFlagCount()+TRACKED_UNKNOWNS.length;
   host.innerHTML=
     `<div class="stage-label" style="margin-top:0;">Constraints (the corners)</div>`+
-    consRow(e.targetOK,`<b>HUD Uo ≤ ${f(uUo(cap),3)} ${uUou()}</b> (Zone ${S.uoZone}) — currently <b>${f(uUo(e.Uo),3)}</b> ${e.targetOK?'✓ passes':'✗ over by '+f(uUo(e.Uo-cap),3)}`)+
+    (function(){const fr=uoFragility();
+      const okIco=fr.state==='solid';                        // green check only when solid; amber triangle for fragile & fail
+      const tail=fr.state==='fail'?`✗ over by ${f(uUo(e.Uo-cap),3)}`
+        :fr.state==='fragile'?(fr.takeoffFlagged?`⚠ FRAGILE — ${f(fr.headroom*100,1)} pts steel headroom (takeoff ${f(fr.fracNow*100,1)}%, cap at ${f(fr.fracCrit*100,1)}%)`:`⚠ FRAGILE — ${f(fr.marginRel*100,0)}% under cap`)
+        :`✓ solid`;
+      return consRow(okIco,`<b>HUD Uo ≤ ${f(uUo(cap),3)} ${uUou()}</b> (Zone ${S.uoZone}) — currently <b>${f(uUo(e.Uo),3)}</b> ${tail}`);})()+
     consRow(null,`Exterior box fixed 144×90×99″ → interior <b>${f(uA(e.intFloorFt2),1)} ${uAu()}</b> floor · wall build-up is the only mover`)+
     consRow(null,`Roof ${f(uA(90),0)} ${uAu()} → ${SOLAR.qty}× HiN-T595NI = <b>${f(S.solarW,0)} W</b> array, ${f(R.thermal.basis.pvCov*100,0)}% coverage — no room for more panels`)+
     consRow(R.meetsDays,`Battery ${S.battModules}× V5° vs ${f(S.powerDays,1)}-day autonomy — ${R.meetsDays?'meets ✓':'needs '+R.reqModules+' modules'}`)+
@@ -2800,7 +2843,7 @@ function recalc(){
     mcard('Battery bank','kWh',f(R.installedWh/1000,2),`${R.modules}× Pytes V5° installed`,'hero') +
     mcard('Peak current','A DC',f(R.peakAmps,1),'heater + pump') +
     mcard('Solar makeup','%',f(R.solarCoverPct,0),`${climLabel()}`) +
-    mcard('Envelope Uo',uUou(),f(uUo(R.env.Uo),3),`${zoneTag(R.env.Uo)} · vs Z${S.uoZone} ${R.env.targetOK?'✓':'✗'}`,'hero') +
+    mcard('Envelope Uo',uUou(),f(uUo(R.env.Uo),3),`Z${S.uoZone} ${fragBadge(uoFragility())}`,'hero') +
     mcard('HVAC / year','kWh',f(R.seasonal.heatKwh+R.seasonal.coolKwh,0),`degree-day est · heat ${f(R.seasonal.heatKwh,0)} + cool ${f(R.seasonal.coolKwh,0)}`) +
     mcard('Toilet liquid',uVu()+'/day',f(uV(R.liquidGalDay),2),S.toiletMode==='urine-sep'?'urine sep':'leachate')
   );
@@ -3355,7 +3398,7 @@ function renderCompliance(){
 const STORAGE_KEY = 'uplift-water-planner-v4';   // v4: unified planner (envelope/thermal/HVAC/backend) — payload v:7
 const STORAGE_KEY_OLD = 'uplift-water-planner-v3';   // read-only fallback: migrate v3 saves forward on first load
 const APP_VERSION = 'v40';   // optional human label; the build stamp below is the source of truth
-const BUILD_STAMP = '2026-07-17 16:58 UTC (build 53)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
+const BUILD_STAMP = '2026-07-17 20:34 UTC (build 54)';   // AUTO-STAMPED by .git/hooks/pre-commit at every commit — do NOT edit by hand
 let booted = false;
 function setStatus(msg,icon){ setHTML('save-status', `<i class="ti ti-${icon||'check'}"></i>${msg}`); }
 function save(){
