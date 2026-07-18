@@ -1,0 +1,23 @@
+services:
+  web:
+    image: nginx:1.27-alpine
+    # Whole-directory mount (not per-file): git pull replaces file inodes,
+    # which would leave single-file bind mounts serving stale content.
+    volumes:
+      - ./:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+    networks:
+      - default
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.systems.rule=Host(`systems.uplift.us`)"
+      - "traefik.http.routers.systems.entrypoints=websecure"
+      - "traefik.http.routers.systems.tls.certresolver=letsencrypt"
+      - "traefik.http.services.systems.loadbalancer.server.port=80"
+
+networks:
+  proxy:
+    external: true
