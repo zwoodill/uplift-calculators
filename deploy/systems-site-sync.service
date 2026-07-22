@@ -1,9 +1,0 @@
-[Unit]
-Description=Sync systems repo to origin/main (content behind systems.uplift.us)
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/git -C /home/sysadmin/repos/systems fetch origin
-# Hard-reset, not pull: main is the source of truth; local edits on the
-# server are discarded so the site always matches what's on GitHub.
-ExecStart=/usr/bin/git -C /home/sysadmin/repos/systems reset --hard origin/main
